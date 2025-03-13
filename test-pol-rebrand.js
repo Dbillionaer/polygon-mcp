@@ -138,6 +138,7 @@ const mockLogger = {
 // Run tests to verify POL rebrand changes
 async function runTests() {
   console.log('Starting POL rebrand verification tests');
+  console.log('This is a test of the console output');
   
   try {
     // Test 1: Get testnet POL (formerly MATIC)

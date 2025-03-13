@@ -1,5 +1,17 @@
 // polygon MCP.js - Main MCP Server Implementation
-const ethers = require('ethers');
+// Import specific modules from ethers v6
+const { 
+  JsonRpcProvider, 
+  Wallet, 
+  HDNodeWallet, 
+  Contract, 
+  Interface,
+  isAddress,
+  formatUnits,
+  formatEther,
+  parseUnits,
+  parseEther
+} = require('ethers');
 const dotenv = require('dotenv');
 const { Server } = require('@modelcontextprotocol/sdk/server/index.js');
 const { StdioServerTransport } = require('@modelcontextprotocol/sdk/server/stdio.js');
@@ -86,15 +98,16 @@ class PolygonMCPServer {
     this.currentNetwork = process.env.DEFAULT_NETWORK || 'mumbai';
     this.walletConnected = false;
     
-    // Initialize providers
+    // Initialize providers - updated for ethers v6
     this.providers = {
-      mainnet: new ethers.providers.JsonRpcProvider(RPC_ENDPOINTS.mainnet),
-      mumbai: new ethers.providers.JsonRpcProvider(RPC_ENDPOINTS.mumbai)
+      mainnet: new JsonRpcProvider(RPC_ENDPOINTS.mainnet),
+      mumbai: new JsonRpcProvider(RPC_ENDPOINTS.mumbai)
     };
     
-    // Create HDWallet from seed phrase
+    // Create HDWallet from seed phrase - updated for ethers v6
     if (process.env.SEED_PHRASE) {
-      this.hdWallet = ethers.utils.HDNode.fromMnemonic(process.env.SEED_PHRASE);
+      // HDNodeWallet.fromMnemonic returns a wallet directly in v6
+      this.hdWallet = HDNodeWallet.fromPhrase(process.env.SEED_PHRASE);
       this.walletIndex = 0;
       
       // Derive default wallet
@@ -146,7 +159,7 @@ class PolygonMCPServer {
     this.simulator = new TransactionSimulator(this.simulatorConfig);
   }
   
-  // Connect wallet for operations
+  // Connect wallet for operations - updated for ethers v6
   connectWallet(index = 0) {
     try {
       if (!this.hdWallet) {
@@ -156,15 +169,15 @@ class PolygonMCPServer {
         );
       }
       
-      // Derive wallet from HD path
+      // Derive wallet from HD path - in v6, we derive directly from the HDNodeWallet
       const path = `m/44'/60'/0'/0/${index}`;
+      // In v6, we can derive directly from the HDNodeWallet
       const derivedWallet = this.hdWallet.derivePath(path);
-      const privateKey = derivedWallet.privateKey;
       
-      // Connect wallet to providers
+      // Connect wallet to providers - updated for v6
       this.wallets = {
-        mainnet: new ethers.Wallet(privateKey, this.providers.mainnet),
-        mumbai: new ethers.Wallet(privateKey, this.providers.mumbai)
+        mainnet: derivedWallet.connect(this.providers.mainnet),
+        mumbai: derivedWallet.connect(this.providers.mumbai)
       };
       
       // Set current wallet
@@ -173,10 +186,10 @@ class PolygonMCPServer {
       this.walletConnected = true;
       
       // Connect wallet to protocols
-      if (this.defi) this.defi.connectWallet(privateKey);
-      if (this.contractTemplates) this.contractTemplates.connectWallet(privateKey);
-      if (this.simulator) this.simulator.connectWallet(privateKey);
-      if (this.bridge) this.bridge.connectWallet(privateKey);
+      if (this.defi) this.defi.connectWallet(derivedWallet.privateKey);
+      if (this.contractTemplates) this.contractTemplates.connectWallet(derivedWallet.privateKey);
+      if (this.simulator) this.simulator.connectWallet(derivedWallet.privateKey);
+      if (this.bridge) this.bridge.connectWallet(derivedWallet.privateKey);
       
       logger.info('Wallet connected successfully', { 
         address: this.wallet.address,
@@ -321,7 +334,7 @@ class PolygonMCPServer {
       {
         token: "POL",
         address: "0x0000000000000000000000000000000000001010",
-        balance: ethers.utils.formatEther(nativeBalance),
+        balance: formatEther(nativeBalance),
         symbol: "POL",
         decimals: 18,
         native: true
@@ -333,8 +346,8 @@ class PolygonMCPServer {
       ? ['WMATIC', 'WETH', 'USDC', 'USDT', 'DAI']
       : ['TEST_WMATIC', 'TEST_USDC'];
     
-    // ERC20 interface for balance checking
-    const erc20Interface = new ethers.utils.Interface([
+    // ERC20 interface for balance checking - updated for ethers v6
+    const erc20Interface = new Interface([
       "function balanceOf(address owner) view returns (uint256)",
       "function decimals() view returns (uint8)",
       "function symbol() view returns (string)"
@@ -346,7 +359,8 @@ class PolygonMCPServer {
       if (!tokenAddress) continue;
       
       try {
-        const tokenContract = new ethers.Contract(
+        // Create contract instance - updated for ethers v6
+        const tokenContract = new Contract(
           tokenAddress,
           erc20Interface,
           this.wallet.provider
@@ -360,11 +374,12 @@ class PolygonMCPServer {
         ]);
         
         // Only add tokens with non-zero balance
-        if (!balance.isZero()) {
+        // In v6, BigNumber.isZero() is replaced with checking if the value equals 0n
+        if (balance != 0n) {
           balances.push({
             token,
             address: tokenAddress,
-            balance: ethers.utils.formatUnits(balance, decimals),
+            balance: formatUnits(balance, decimals),
             symbol,
             decimals,
             native: false
@@ -387,7 +402,7 @@ class PolygonMCPServer {
       throw new Error("Wallet not connected");
     }
     
-    if (!destination || !ethers.utils.isAddress(destination)) {
+    if (!destination || !isAddress(destination)) {
       throw new Error("Invalid destination address");
     }
     
@@ -397,10 +412,10 @@ class PolygonMCPServer {
     
     // Check if we're transferring native POL/MATIC
     if (!assetId || assetId.toUpperCase() === 'POL' || assetId.toUpperCase() === 'MATIC') {
-      // Transfer native POL
+      // Transfer native POL - updated for ethers v6
       const tx = await this.wallet.sendTransaction({
         to: destination,
-        value: ethers.utils.parseEther(amount)
+        value: parseEther(amount)
       });
       
       await tx.wait();
@@ -423,18 +438,19 @@ class PolygonMCPServer {
         tokenAddress = TOKEN_ADDRESSES[assetId.toUpperCase()];
       }
       
-      if (!ethers.utils.isAddress(tokenAddress)) {
+      if (!isAddress(tokenAddress)) {
         throw new Error(`Unknown token: ${assetId}`);
       }
       
-      // ERC20 interface for transfer
-      const erc20Interface = new ethers.utils.Interface([
+      // ERC20 interface for transfer - updated for ethers v6
+      const erc20Interface = new Interface([
         "function transfer(address to, uint256 amount) returns (bool)",
         "function decimals() view returns (uint8)",
         "function symbol() view returns (string)"
       ]);
       
-      const tokenContract = new ethers.Contract(
+      // Create contract instance - updated for ethers v6
+      const tokenContract = new Contract(
         tokenAddress,
         erc20Interface,
         this.wallet
@@ -444,10 +460,10 @@ class PolygonMCPServer {
       const decimals = await tokenContract.decimals().catch(() => 18);
       const symbol = await tokenContract.symbol().catch(() => assetId);
       
-      // Execute transfer
+      // Execute transfer - updated for ethers v6
       const tx = await tokenContract.transfer(
         destination,
-        ethers.utils.parseUnits(amount, decimals)
+        parseUnits(amount, decimals)
       );
       
       await tx.wait();
@@ -520,7 +536,8 @@ class PolygonMCPServer {
   }
   
   async verifyContract({ contractAddress, contractName, solidityInputJson, constructorArgs }) {
-    if (!ethers.utils.isAddress(contractAddress)) {
+    // Updated for ethers v6
+    if (!isAddress(contractAddress)) {
       throw new Error("Invalid contract address");
     }
     
@@ -609,7 +626,8 @@ class PolygonMCPServer {
         throw new Error(`Please provide the token address directly`);
       }
       
-      if (!ethers.utils.isAddress(tokenAddress)) {
+      // Updated for ethers v6
+      if (!isAddress(tokenAddress)) {
         throw new Error(`Invalid token address: ${token}`);
       }
       
@@ -647,7 +665,8 @@ class PolygonMCPServer {
         tokenAddress = TOKEN_ADDRESSES[token.toUpperCase()];
       }
       
-      if (!ethers.utils.isAddress(tokenAddress)) {
+      // Updated for ethers v6
+      if (!isAddress(tokenAddress)) {
         throw new Error(`Unknown token: ${token}`);
       }
       
@@ -801,17 +820,18 @@ class PolygonMCPServer {
     };
   }
   
-  // Network tools
+  // Network tools - updated for ethers v6
   async getGasPrice() {
     const feeData = await this.providers[this.currentNetwork].getFeeData();
     
     return {
       success: true,
       network: this.currentNetwork,
-      gasPrice: ethers.utils.formatUnits(feeData.gasPrice || 0, 'gwei'),
-      maxFeePerGas: feeData.maxFeePerGas ? ethers.utils.formatUnits(feeData.maxFeePerGas, 'gwei') : null,
-      maxPriorityFeePerGas: feeData.maxPriorityFeePerGas ? ethers.utils.formatUnits(feeData.maxPriorityFeePerGas, 'gwei') : null,
-      baseFeePerGas: feeData.lastBaseFeePerGas ? ethers.utils.formatUnits(feeData.lastBaseFeePerGas, 'gwei') : null
+      gasPrice: feeData.gasPrice ? formatUnits(feeData.gasPrice, 'gwei') : null,
+      maxFeePerGas: feeData.maxFeePerGas ? formatUnits(feeData.maxFeePerGas, 'gwei') : null,
+      maxPriorityFeePerGas: feeData.maxPriorityFeePerGas ? formatUnits(feeData.maxPriorityFeePerGas, 'gwei') : null,
+      // In v6, lastBaseFeePerGas is renamed to baseFeePerGas
+      baseFeePerGas: feeData.baseFeePerGas ? formatUnits(feeData.baseFeePerGas, 'gwei') : null
     };
   }
   
