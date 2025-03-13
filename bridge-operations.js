@@ -1,5 +1,16 @@
 // bridge-operations.js - Polygon Bridge Operations
-const ethers = require('ethers');
+// Import specific modules from ethers v6
+const { 
+  JsonRpcProvider, 
+  Wallet, 
+  Contract, 
+  Interface,
+  parseEther,
+  parseUnits,
+  formatEther,
+  formatUnits,
+  AbiCoder
+} = require('ethers');
 
 // ABI for POS Portal contracts
 const POS_ROOT_CHAIN_MANAGER_ABI = [
@@ -22,28 +33,28 @@ class PolygonBridge {
     this.posRootChainManager = config.posRootChainManager;
     this.polygonApiUrl = config.polygonApiUrl;
     
-    // Initialize providers
-    this.rootProvider = new ethers.providers.JsonRpcProvider(this.rootRpcUrl);
-    this.childProvider = new ethers.providers.JsonRpcProvider(this.childRpcUrl);
+    // Initialize providers - updated for ethers v6
+    this.rootProvider = new JsonRpcProvider(this.rootRpcUrl);
+    this.childProvider = new JsonRpcProvider(this.childRpcUrl);
     
-    // Initialize contracts
-    this.rootChainManagerContract = new ethers.Contract(
+    // Initialize contracts - updated for ethers v6
+    this.rootChainManagerContract = new Contract(
       this.posRootChainManager,
       POS_ROOT_CHAIN_MANAGER_ABI,
       this.rootProvider
     );
   }
   
-  // Connect wallet for operations
+  // Connect wallet for operations - updated for ethers v6
   connectWallet(privateKey) {
-    this.rootWallet = new ethers.Wallet(privateKey, this.rootProvider);
-    this.childWallet = new ethers.Wallet(privateKey, this.childProvider);
+    this.rootWallet = new Wallet(privateKey, this.rootProvider);
+    this.childWallet = new Wallet(privateKey, this.childProvider);
     
     // Update contract with signer
     this.rootChainManagerContract = this.rootChainManagerContract.connect(this.rootWallet);
   }
   
-  // Deposit ETH to Polygon
+  // Deposit ETH to Polygon - updated for ethers v6
   async depositETH(amount) {
     if (!this.rootWallet) {
       throw new Error("Wallet not connected");
@@ -51,7 +62,7 @@ class PolygonBridge {
     
     try {
       // Convert amount to wei
-      const amountWei = ethers.utils.parseEther(amount.toString());
+      const amountWei = parseEther(amount.toString());
       
       // Deposit ETH to Polygon
       const tx = await this.rootChainManagerContract.depositEtherFor(
@@ -66,7 +77,7 @@ class PolygonBridge {
         transactionHash: receipt.transactionHash,
         blockNumber: receipt.blockNumber,
         from: receipt.from,
-        amount: ethers.utils.formatEther(amountWei),
+        amount: formatEther(amountWei),
         status: "Deposit initiated"
       };
     } catch (error) {
@@ -74,15 +85,15 @@ class PolygonBridge {
     }
   }
   
-  // Deposit ERC20 to Polygon
+  // Deposit ERC20 to Polygon - updated for ethers v6
   async depositERC20(tokenAddress, amount) {
     if (!this.rootWallet) {
       throw new Error("Wallet not connected");
     }
     
     try {
-      // Create token contract instance
-      const tokenContract = new ethers.Contract(
+      // Create token contract instance - updated for ethers v6
+      const tokenContract = new Contract(
         tokenAddress,
         ERC20_ABI,
         this.rootWallet
@@ -91,8 +102,8 @@ class PolygonBridge {
       // Get token decimals
       const decimals = await tokenContract.decimals();
       
-      // Convert amount to token units
-      const amountInTokenUnits = ethers.utils.parseUnits(amount.toString(), decimals);
+      // Convert amount to token units - updated for ethers v6
+      const amountInTokenUnits = parseUnits(amount.toString(), decimals);
       
       // Check allowance
       const allowance = await tokenContract.allowance(
@@ -100,8 +111,8 @@ class PolygonBridge {
         this.posRootChainManager
       );
       
-      // Approve if needed
-      if (allowance.lt(amountInTokenUnits)) {
+      // Approve if needed - updated for ethers v6 (BigInt comparison)
+      if (allowance < amountInTokenUnits) {
         const approveTx = await tokenContract.approve(
           this.posRootChainManager,
           amountInTokenUnits
@@ -110,8 +121,9 @@ class PolygonBridge {
         await approveTx.wait();
       }
       
-      // Prepare deposit data
-      const depositData = ethers.utils.defaultAbiCoder.encode(
+      // Prepare deposit data - updated for ethers v6
+      const abiCoder = new AbiCoder();
+      const depositData = abiCoder.encode(
         ['uint256'],
         [amountInTokenUnits]
       );
@@ -139,15 +151,15 @@ class PolygonBridge {
     }
   }
   
-  // Withdraw POL (formerly MATIC) from Polygon to Ethereum
+  // Withdraw POL (formerly MATIC) from Polygon to Ethereum - updated for ethers v6
   async withdrawPOL(amount) {
     if (!this.childWallet) {
       throw new Error("Wallet not connected");
     }
     
     try {
-      // Convert amount to wei
-      const amountWei = ethers.utils.parseEther(amount.toString());
+      // Convert amount to wei - updated for ethers v6
+      const amountWei = parseEther(amount.toString());
       
       // Create RootChainManager contract on Polygon
       const predicate = "0xdD6596F2029e6233DEFfaCa316e6A95217d4Dc34"; // POL predicate
@@ -166,7 +178,7 @@ class PolygonBridge {
         transactionHash: receipt.transactionHash,
         blockNumber: receipt.blockNumber,
         from: receipt.from,
-        amount: ethers.utils.formatEther(amountWei),
+        amount: formatEther(amountWei),
         status: "Withdrawal initiated, waiting for checkpoint"
       };
     } catch (error) {
@@ -180,15 +192,15 @@ class PolygonBridge {
     return this.withdrawPOL(amount);
   }
   
-  // Withdraw ERC20 from Polygon to Ethereum
+  // Withdraw ERC20 from Polygon to Ethereum - updated for ethers v6
   async withdrawERC20(tokenAddress, amount) {
     if (!this.childWallet) {
       throw new Error("Wallet not connected");
     }
     
     try {
-      // Create token contract instance
-      const tokenContract = new ethers.Contract(
+      // Create token contract instance - updated for ethers v6
+      const tokenContract = new Contract(
         tokenAddress,
         [
           "function withdraw(uint256 amount)",
@@ -200,8 +212,8 @@ class PolygonBridge {
       // Get token decimals
       const decimals = await tokenContract.decimals();
       
-      // Convert amount to token units
-      const amountInTokenUnits = ethers.utils.parseUnits(amount.toString(), decimals);
+      // Convert amount to token units - updated for ethers v6
+      const amountInTokenUnits = parseUnits(amount.toString(), decimals);
       
       // Burn tokens on Polygon
       const tx = await tokenContract.withdraw(amountInTokenUnits);
