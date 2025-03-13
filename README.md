@@ -6,9 +6,9 @@ A Model Context Protocol (MCP) server for interacting with the Polygon blockchai
 
 ### Wallet Tools
 - `get-address`: Retrieve the current wallet address
-- `get-testnet-matic`: Request testnet MATIC from a faucet (Mumbai testnet only)
+- `get-testnet-matic`: Request testnet POL from a faucet (Mumbai testnet only)
 - `list-balances`: List token balances for the connected wallet
-- `transfer-funds`: Transfer MATIC or ERC20 tokens to another address
+- `transfer-funds`: Transfer POL or ERC20 tokens to another address
 
 ### Contract Tools
 - `deploy-contract`: Deploy a smart contract to the Polygon network

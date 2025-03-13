@@ -51,15 +51,19 @@ const RPC_ENDPOINTS = {
 
 // Common token addresses
 const TOKEN_ADDRESSES = {
-  'MATIC': '0x0000000000000000000000000000000000001010', // Native MATIC
-  'WMATIC': '0x0d500B1d8E8eF31E21C99d1Db9A6444d3ADf1270', // Wrapped MATIC (mainnet)
+  'POL': '0x0000000000000000000000000000000000001010', // Native POL (formerly MATIC)
+  'MATIC': '0x0000000000000000000000000000000000001010', // Legacy name for backward compatibility
+  'WPOL': '0x0d500B1d8E8eF31E21C99d1Db9A6444d3ADf1270', // Wrapped POL (mainnet)
+  'WMATIC': '0x0d500B1d8E8eF31E21C99d1Db9A6444d3ADf1270', // Legacy name for backward compatibility
   'WETH': '0x7ceB23fD6bC0adD59E62ac25578270cFf1b9f619', // Wrapped ETH (mainnet)
   'USDC': '0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174', // USDC (mainnet)
   'USDT': '0xc2132D05D31c914a87C6611C10748AEb04B58e8F', // USDT (mainnet)
   'DAI': '0x8f3Cf7ad23Cd3CaDbD9735AFf958023239c6A063', // DAI (mainnet)
   // Mumbai testnet addresses
-  'TEST_MATIC': '0x0000000000000000000000000000000000001010', // Native MATIC on Mumbai
-  'TEST_WMATIC': '0x9c3C9283D3e44854697Cd22D3Faa240Cfb032889', // Wrapped MATIC on Mumbai
+  'TEST_POL': '0x0000000000000000000000000000000000001010', // Native POL on Mumbai
+  'TEST_MATIC': '0x0000000000000000000000000000000000001010', // Legacy name for backward compatibility
+  'TEST_WPOL': '0x9c3C9283D3e44854697Cd22D3Faa240Cfb032889', // Wrapped POL on Mumbai
+  'TEST_WMATIC': '0x9c3C9283D3e44854697Cd22D3Faa240Cfb032889', // Legacy name for backward compatibility
   'TEST_USDC': '0xe11A86849d99F524cAC3E7A0Ec1241828e332C62'  // USDC on Mumbai
 };
 
@@ -298,8 +302,8 @@ class PolygonMCPServer {
     return {
       success: true,
       address: this.wallet.address,
-      amount: "1 MATIC",
-      message: "Testnet MATIC sent! It should arrive in your wallet shortly.",
+      amount: "1 POL",
+      message: "Testnet POL sent! It should arrive in your wallet shortly.",
       faucetUsed: "Polygon Mumbai Faucet"
     };
   }
@@ -309,16 +313,16 @@ class PolygonMCPServer {
       throw new Error("Wallet not connected");
     }
     
-    // Get native MATIC balance
+    // Get native POL balance
     const nativeBalance = await this.wallet.getBalance();
     
     // Create result with native balance
     const balances = [
       {
-        token: "MATIC",
+        token: "POL",
         address: "0x0000000000000000000000000000000000001010",
         balance: ethers.utils.formatEther(nativeBalance),
-        symbol: "MATIC",
+        symbol: "POL",
         decimals: 18,
         native: true
       }
@@ -391,9 +395,9 @@ class PolygonMCPServer {
       throw new Error("Invalid amount");
     }
     
-    // Check if we're transferring native MATIC
-    if (!assetId || assetId.toUpperCase() === 'MATIC') {
-      // Transfer native MATIC
+    // Check if we're transferring native POL/MATIC
+    if (!assetId || assetId.toUpperCase() === 'POL' || assetId.toUpperCase() === 'MATIC') {
+      // Transfer native POL
       const tx = await this.wallet.sendTransaction({
         to: destination,
         value: ethers.utils.parseEther(amount)
@@ -407,7 +411,7 @@ class PolygonMCPServer {
         from: this.wallet.address,
         to: destination,
         amount,
-        asset: 'MATIC',
+        asset: 'POL',
         network: this.currentNetwork
       };
     } else {
@@ -624,14 +628,15 @@ class PolygonMCPServer {
       throw new Error("Wallet not connected");
     }
     
-    // Determine if this is MATIC or an ERC20
-    if (!token || token.toUpperCase() === 'MATIC') {
-      const result = await this.bridge.withdrawMATIC(amount);
+    // Determine if this is POL/MATIC or an ERC20
+    if (!token || token.toUpperCase() === 'POL' || token.toUpperCase() === 'MATIC') {
+      // Use withdrawPOL for both POL and MATIC (for backward compatibility)
+      const result = await this.bridge.withdrawPOL(amount);
       
       return {
         success: true,
         ...result,
-        message: "MATIC withdrawal initiated. After checkpoint inclusion, you'll need to execute the exit transaction on Ethereum."
+        message: "POL withdrawal initiated. After checkpoint inclusion, you'll need to execute the exit transaction on Ethereum."
       };
     } else {
       // Get token address

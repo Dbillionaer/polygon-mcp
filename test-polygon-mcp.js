@@ -20,16 +20,27 @@ async function runTests() {
     const gasPriceResult = await mcpServer.tools['get-gas-price']();
     logger.info('Gas price result:', gasPriceResult);
     
-    // Test 3: List contract templates
-    logger.info('Test 3: List contract templates');
+    // Test 3: List balances (should show POL)
+    logger.info('Test 3: List balances');
+    const balancesResult = await mcpServer.tools['list-balances']();
+    logger.info('Balances result:', {
+      success: true,
+      address: balancesResult.address,
+      networkName: balancesResult.network,
+      balanceCount: balancesResult.balances.length,
+      nativeToken: balancesResult.balances[0].token
+    });
+    
+    // Test 4: List contract templates
+    logger.info('Test 4: List contract templates');
     const templatesResult = await mcpServer.tools['list-contract-templates']();
     logger.info('Contract templates result:', {
       success: templatesResult.success,
       templateCount: templatesResult.templates ? templatesResult.templates.length : 0
     });
     
-    // Test 4: Switch network
-    logger.info('Test 4: Switch network');
+    // Test 5: Switch network
+    logger.info('Test 5: Switch network');
     // Switch to mainnet
     const switchToMainnetResult = await mcpServer.tools['switch-network']({ network: 'mainnet' });
     logger.info('Switch to mainnet result:', switchToMainnetResult);

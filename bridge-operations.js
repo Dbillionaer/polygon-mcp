@@ -139,8 +139,8 @@ class PolygonBridge {
     }
   }
   
-  // Withdraw MATIC from Polygon to Ethereum
-  async withdrawMATIC(amount) {
+  // Withdraw POL (formerly MATIC) from Polygon to Ethereum
+  async withdrawPOL(amount) {
     if (!this.childWallet) {
       throw new Error("Wallet not connected");
     }
@@ -150,9 +150,9 @@ class PolygonBridge {
       const amountWei = ethers.utils.parseEther(amount.toString());
       
       // Create RootChainManager contract on Polygon
-      const predicate = "0xdD6596F2029e6233DEFfaCa316e6A95217d4Dc34"; // MATIC predicate
+      const predicate = "0xdD6596F2029e6233DEFfaCa316e6A95217d4Dc34"; // POL predicate
       
-      // Burn MATIC on Polygon
+      // Burn POL on Polygon
       const tx = await this.childWallet.sendTransaction({
         to: predicate,
         value: amountWei,
@@ -170,8 +170,14 @@ class PolygonBridge {
         status: "Withdrawal initiated, waiting for checkpoint"
       };
     } catch (error) {
-      throw new Error(`MATIC withdrawal failed: ${error.message}`);
+      throw new Error(`POL withdrawal failed: ${error.message}`);
     }
+  }
+  
+  // Withdraw MATIC from Polygon to Ethereum (legacy name for backward compatibility)
+  async withdrawMATIC(amount) {
+    // Call the new withdrawPOL function for backward compatibility
+    return this.withdrawPOL(amount);
   }
   
   // Withdraw ERC20 from Polygon to Ethereum
