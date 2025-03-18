@@ -26,8 +26,6 @@ A Model Context Protocol (MCP) server for interacting with the Polygon blockchai
 - `swap-tokens`: Swap tokens using QuickSwap
 - `get-swap-quote`: Get a price quote for a token swap
 - `add-liquidity`: Add liquidity to a QuickSwap pool
-- `aave-deposit`: Deposit assets into Aave lending protocol
-- `aave-withdraw`: Withdraw assets from Aave lending protocol
 
 ### Simulation Tools
 - `simulate-transaction`: Simulate a transaction to preview its effects
