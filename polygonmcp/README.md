@@ -27,6 +27,11 @@ A Model Context Protocol (MCP) server for interacting with the Polygon blockchai
   - `swap-tokens`: Swap tokens using QuickSwap
   - `get-swap-quote`: Get a price quote for a token swap
   - `add-liquidity`: Add liquidity to a QuickSwap pool
+- Uniswap V2 interactions:
+  - `uniswapV2Swap`: Execute token swaps
+  - `getUniswapV2Quote`: Get price quotes for token swaps
+  - `addUniswapV2Liquidity`: Add liquidity to V2 pools
+  - `removeUniswapV2Liquidity`: Remove liquidity from V2 pools
 - Uniswap V3 interactions:
   - `uniswapV3SwapSingle`: Execute single-hop swaps
   - `uniswapV3SwapMulti`: Execute multi-hop swaps
@@ -139,7 +144,7 @@ For Cursor/Claude Dev:
 - Robust input validation
 - Comprehensive error handling
 - Structured logging system
-- Support for multiple DeFi protocols (QuickSwap, Uniswap V3, Polymarket)
+- Support for multiple DeFi protocols (QuickSwap, Uniswap V2, Uniswap V3, Polymarket)
 - Slippage protection for trades
 - Automatic token approvals
 - Multi-hop trading support

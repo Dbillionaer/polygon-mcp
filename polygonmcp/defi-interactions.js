@@ -66,11 +66,22 @@ const POLYMARKET_MARKET_ABI = [
   "function getQuestion() external view returns (string)"
 ];
 
+// Uniswap V2 Router ABI (simplified)
+const UNISWAP_V2_ROUTER_ABI = [
+  "function getAmountsOut(uint amountIn, address[] memory path) public view returns (uint[] memory amounts)",
+  "function swapExactTokensForTokens(uint amountIn, uint amountOutMin, address[] calldata path, address to, uint deadline) external returns (uint[] memory amounts)",
+  "function swapExactETHForTokens(uint amountOutMin, address[] calldata path, address to, uint deadline) external payable returns (uint[] memory amounts)",
+  "function swapExactTokensForETH(uint amountIn, uint amountOutMin, address[] calldata path, address to, uint deadline) external returns (uint[] memory amounts)",
+  "function addLiquidity(address tokenA, address tokenB, uint amountADesired, uint amountBDesired, uint amountAMin, uint amountBMin, address to, uint deadline) external returns (uint amountA, uint amountB, uint liquidity)",
+  "function removeLiquidity(address tokenA, address tokenB, uint liquidity, uint amountAMin, uint amountBMin, address to, uint deadline) external returns (uint amountA, uint amountB)"
+];
+
 class DeFiProtocols {
   constructor(config) {
     this.rpcUrl = config.rpcUrl;
     this.quickswapRouter = config.quickswapRouter;
     this.uniswapRouter = config.uniswapRouter;
+    this.uniswapV2Router = config.uniswapV2Router;
     this.tokenAddresses = config.tokenAddresses;
     this.polymarketFactory = config.polymarketFactory;
     
@@ -86,11 +97,20 @@ class DeFiProtocols {
       );
     }
 
-    // Initialize Uniswap router contract
+    // Initialize Uniswap V3 router contract
     if (this.uniswapRouter) {
       this.uniswapRouterContract = new Contract(
         this.uniswapRouter,
         UNISWAP_ROUTER_ABI,
+        this.provider
+      );
+    }
+
+    // Initialize Uniswap V2 router contract
+    if (this.uniswapV2Router) {
+      this.uniswapV2RouterContract = new Contract(
+        this.uniswapV2Router,
+        UNISWAP_V2_ROUTER_ABI,
         this.provider
       );
     }
@@ -114,9 +134,14 @@ class DeFiProtocols {
       this.quickswapRouterContract = this.quickswapRouterContract.connect(this.wallet);
     }
 
-    // Update Uniswap router contract with signer
+    // Update Uniswap V3 router contract with signer
     if (this.uniswapRouterContract) {
       this.uniswapRouterContract = this.uniswapRouterContract.connect(this.wallet);
+    }
+
+    // Update Uniswap V2 router contract with signer
+    if (this.uniswapV2RouterContract) {
+      this.uniswapV2RouterContract = this.uniswapV2RouterContract.connect(this.wallet);
     }
   }
   
@@ -232,12 +257,12 @@ class DeFiProtocols {
       // Check if we need to approve the router
       const allowance = await fromTokenContract.allowance(
         this.wallet.address,
-        this.uniswapRouter
+        this.uniswapRouterContract.address
       );
       
       if (allowance < amountIn) {
         const approveTx = await fromTokenContract.approve(
-          this.uniswapRouter,
+          this.uniswapRouterContract.address,
           MaxUint256 // Approve max amount
         );
         
@@ -388,12 +413,12 @@ class DeFiProtocols {
       // Check if we need to approve the router
       const allowance = await fromTokenContract.allowance(
         this.wallet.address,
-        this.uniswapRouter
+        this.uniswapRouterContract.address
       );
       
       if (allowance < amountIn) {
         const approveTx = await fromTokenContract.approve(
-          this.uniswapRouter,
+          this.uniswapRouterContract.address,
           MaxUint256 // Approve max amount
         );
         
@@ -523,12 +548,12 @@ class DeFiProtocols {
       // Check if we need to approve the router
       const allowance = await fromTokenContract.allowance(
         this.wallet.address,
-        this.quickswapRouter
+        this.quickswapRouterContract.address
       );
       
       if (allowance < amountIn) {
         const approveTx = await fromTokenContract.approve(
-          this.quickswapRouter,
+          this.quickswapRouterContract.address,
           MaxUint256 // Approve max amount
         );
         
@@ -598,12 +623,12 @@ class DeFiProtocols {
       // Check if we need to approve the router for token A
       const allowanceA = await tokenAContract.allowance(
         this.wallet.address,
-        this.quickswapRouter
+        this.quickswapRouterContract.address
       );
       
       if (allowanceA < amountADesired) {
         const approveTxA = await tokenAContract.approve(
-          this.quickswapRouter,
+          this.quickswapRouterContract.address,
           MaxUint256 // Approve max amount
         );
         
@@ -613,12 +638,12 @@ class DeFiProtocols {
       // Check if we need to approve the router for token B
       const allowanceB = await tokenBContract.allowance(
         this.wallet.address,
-        this.quickswapRouter
+        this.quickswapRouterContract.address
       );
       
       if (allowanceB < amountBDesired) {
         const approveTxB = await tokenBContract.approve(
-          this.quickswapRouter,
+          this.quickswapRouterContract.address,
           MaxUint256 // Approve max amount
         );
         
@@ -697,6 +722,17 @@ class DeFiProtocols {
       
       const amountOut = formatUnits(amounts[amounts.length - 1], toDecimals);
       
+      // Get intermediate amounts with proper async handling
+      const intermediateAmounts = await Promise.all(
+        amounts.slice(1, -1).map(async (amount, index) => {
+          const decimals = await this.getTokenContract(intermediateAddresses[index]).decimals().catch(() => 18);
+          return {
+            token: intermediateTokens[index],
+            amount: formatUnits(amount, decimals)
+          };
+        })
+      );
+      
       return {
         fromToken: {
           address: fromTokenAddress,
@@ -710,10 +746,7 @@ class DeFiProtocols {
         },
         rate: parseFloat(amountOut) / parseFloat(amount),
         path,
-        intermediateAmounts: amounts.slice(1, -1).map((amount, index) => ({
-          token: intermediateTokens[index],
-          amount: formatUnits(amount, await this.getTokenContract(intermediateAddresses[index]).decimals().catch(() => 18))
-        }))
+        intermediateAmounts
       };
     } catch (error) {
       throw new Error(`Failed to get QuickSwap multi-hop quote: ${error.message}`);
@@ -754,12 +787,12 @@ class DeFiProtocols {
       // Check if we need to approve the router
       const allowance = await fromTokenContract.allowance(
         this.wallet.address,
-        this.quickswapRouter
+        this.quickswapRouterContract.address
       );
       
       if (allowance < amountIn) {
         const approveTx = await fromTokenContract.approve(
-          this.quickswapRouter,
+          this.quickswapRouterContract.address,
           MaxUint256 // Approve max amount
         );
         
@@ -1197,6 +1230,318 @@ class DeFiProtocols {
       };
     } catch (error) {
       throw new Error(`Failed to get Polymarket outcomes: ${error.message}`);
+    }
+  }
+
+  // Get Uniswap V2 quote
+  async getUniswapV2Quote(fromToken, toToken, amount) {
+    if (!this.uniswapV2RouterContract) {
+      throw new Error("Uniswap V2 router not configured");
+    }
+    
+    try {
+      // Resolve token addresses
+      const fromTokenAddress = this.resolveTokenAddress(fromToken);
+      const toTokenAddress = this.resolveTokenAddress(toToken);
+      
+      // Get token details
+      const fromTokenContract = this.getTokenContract(fromTokenAddress);
+      const toTokenContract = this.getTokenContract(toTokenAddress);
+      
+      const [fromDecimals, toDecimals, fromSymbol, toSymbol] = await Promise.all([
+        fromTokenContract.decimals().catch(() => 18),
+        toTokenContract.decimals().catch(() => 18),
+        fromTokenContract.symbol().catch(() => fromToken),
+        toTokenContract.symbol().catch(() => toToken)
+      ]);
+      
+      // Convert amount to token units
+      const amountIn = parseUnits(amount.toString(), fromDecimals);
+      
+      // Get quote from Uniswap V2
+      const amounts = await this.uniswapV2RouterContract.getAmountsOut(
+        amountIn,
+        [fromTokenAddress, toTokenAddress]
+      );
+      
+      const amountOut = formatUnits(amounts[1], toDecimals);
+      
+      return {
+        fromToken: {
+          address: fromTokenAddress,
+          symbol: fromSymbol,
+          amount
+        },
+        toToken: {
+          address: toTokenAddress,
+          symbol: toSymbol,
+          amount: amountOut
+        },
+        rate: parseFloat(amountOut) / parseFloat(amount),
+        path: [fromTokenAddress, toTokenAddress]
+      };
+    } catch (error) {
+      throw new Error(`Failed to get Uniswap V2 quote: ${error.message}`);
+    }
+  }
+
+  // Swap tokens on Uniswap V2
+  async uniswapV2Swap(fromToken, toToken, amount, slippage = 0.5) {
+    if (!this.wallet) {
+      throw new Error("Wallet not connected");
+    }
+    
+    if (!this.uniswapV2RouterContract) {
+      throw new Error("Uniswap V2 router not configured");
+    }
+    
+    try {
+      // Get quote first
+      const quote = await this.getUniswapV2Quote(fromToken, toToken, amount);
+      
+      // Resolve token addresses
+      const fromTokenAddress = quote.fromToken.address;
+      const toTokenAddress = quote.toToken.address;
+      
+      // Get token details
+      const fromTokenContract = this.getTokenContract(fromTokenAddress);
+      const fromDecimals = await fromTokenContract.decimals().catch(() => 18);
+      
+      // Convert amount to token units
+      const amountIn = parseUnits(amount.toString(), fromDecimals);
+      
+      // Calculate minimum amount out with slippage
+      const amountOutMin = parseUnits(
+        (parseFloat(quote.toToken.amount) * (1 - slippage / 100)).toFixed(18),
+        await this.getTokenContract(toTokenAddress).decimals().catch(() => 18)
+      );
+      
+      // Check if we need to approve the router
+      const allowance = await fromTokenContract.allowance(
+        this.wallet.address,
+        this.uniswapV2RouterContract.address
+      );
+      
+      if (allowance < amountIn) {
+        const approveTx = await fromTokenContract.approve(
+          this.uniswapV2RouterContract.address,
+          MaxUint256 // Approve max amount
+        );
+        
+        await approveTx.wait();
+      }
+      
+      // Set deadline to 20 minutes from now
+      const deadline = Math.floor(Date.now() / 1000) + 20 * 60;
+      
+      // Execute swap
+      const tx = await this.uniswapV2RouterContract.swapExactTokensForTokens(
+        amountIn,
+        amountOutMin,
+        [fromTokenAddress, toTokenAddress],
+        this.wallet.address,
+        deadline
+      );
+      
+      const receipt = await tx.wait();
+      
+      return {
+        transactionHash: receipt.transactionHash,
+        fromToken: quote.fromToken,
+        toToken: quote.toToken,
+        expectedAmount: quote.toToken.amount,
+        minAmount: formatUnits(amountOutMin, await this.getTokenContract(toTokenAddress).decimals().catch(() => 18))
+      };
+    } catch (error) {
+      throw new Error(`Uniswap V2 swap failed: ${error.message}`);
+    }
+  }
+
+  // Add liquidity to Uniswap V2
+  async addUniswapV2Liquidity(tokenA, tokenB, amountA, amountB, slippage = 0.5) {
+    if (!this.wallet) {
+      throw new Error("Wallet not connected");
+    }
+    
+    if (!this.uniswapV2RouterContract) {
+      throw new Error("Uniswap V2 router not configured");
+    }
+    
+    try {
+      // Resolve token addresses
+      const tokenAAddress = this.resolveTokenAddress(tokenA);
+      const tokenBAddress = this.resolveTokenAddress(tokenB);
+      
+      // Get token details
+      const tokenAContract = this.getTokenContract(tokenAAddress);
+      const tokenBContract = this.getTokenContract(tokenBAddress);
+      
+      const [tokenADecimals, tokenBDecimals, tokenASymbol, tokenBSymbol] = await Promise.all([
+        tokenAContract.decimals().catch(() => 18),
+        tokenBContract.decimals().catch(() => 18),
+        tokenAContract.symbol().catch(() => tokenA),
+        tokenBContract.symbol().catch(() => tokenB)
+      ]);
+      
+      // Convert amounts to token units
+      const amountADesired = parseUnits(amountA.toString(), tokenADecimals);
+      const amountBDesired = parseUnits(amountB.toString(), tokenBDecimals);
+      
+      // Calculate minimum amounts with slippage
+      const amountAMin = amountADesired * (1000 - slippage * 10) / 1000;
+      const amountBMin = amountBDesired * (1000 - slippage * 10) / 1000;
+      
+      // Check if we need to approve the router for token A
+      const allowanceA = await tokenAContract.allowance(
+        this.wallet.address,
+        this.uniswapV2RouterContract.address
+      );
+      
+      if (allowanceA < amountADesired) {
+        const approveTxA = await tokenAContract.approve(
+          this.uniswapV2RouterContract.address,
+          MaxUint256 // Approve max amount
+        );
+        
+        await approveTxA.wait();
+      }
+      
+      // Check if we need to approve the router for token B
+      const allowanceB = await tokenBContract.allowance(
+        this.wallet.address,
+        this.uniswapV2RouterContract.address
+      );
+      
+      if (allowanceB < amountBDesired) {
+        const approveTxB = await tokenBContract.approve(
+          this.uniswapV2RouterContract.address,
+          MaxUint256 // Approve max amount
+        );
+        
+        await approveTxB.wait();
+      }
+      
+      // Set deadline to 20 minutes from now
+      const deadline = Math.floor(Date.now() / 1000) + 20 * 60;
+      
+      // Add liquidity
+      const tx = await this.uniswapV2RouterContract.addLiquidity(
+        tokenAAddress,
+        tokenBAddress,
+        amountADesired,
+        amountBDesired,
+        amountAMin,
+        amountBMin,
+        this.wallet.address,
+        deadline
+      );
+      
+      const receipt = await tx.wait();
+      
+      return {
+        transactionHash: receipt.transactionHash,
+        tokenA: {
+          address: tokenAAddress,
+          symbol: tokenASymbol,
+          amount: amountA
+        },
+        tokenB: {
+          address: tokenBAddress,
+          symbol: tokenBSymbol,
+          amount: amountB
+        }
+      };
+    } catch (error) {
+      throw new Error(`Adding Uniswap V2 liquidity failed: ${error.message}`);
+    }
+  }
+
+  // Remove liquidity from Uniswap V2
+  async removeUniswapV2Liquidity(tokenA, tokenB, liquidity, slippage = 0.5) {
+    if (!this.wallet) {
+      throw new Error("Wallet not connected");
+    }
+    
+    if (!this.uniswapV2RouterContract) {
+      throw new Error("Uniswap V2 router not configured");
+    }
+    
+    try {
+      // Resolve token addresses
+      const tokenAAddress = this.resolveTokenAddress(tokenA);
+      const tokenBAddress = this.resolveTokenAddress(tokenB);
+      
+      // Get token details
+      const tokenAContract = this.getTokenContract(tokenAAddress);
+      const tokenBContract = this.getTokenContract(tokenBAddress);
+      
+      const [tokenADecimals, tokenBDecimals, tokenASymbol, tokenBSymbol] = await Promise.all([
+        tokenAContract.decimals().catch(() => 18),
+        tokenBContract.decimals().catch(() => 18),
+        tokenAContract.symbol().catch(() => tokenA),
+        tokenBContract.symbol().catch(() => tokenB)
+      ]);
+      
+      // Convert liquidity to token units
+      const liquidityAmount = parseUnits(liquidity.toString(), 18); // LP tokens are always 18 decimals
+      
+      // Get current balances to calculate minimum amounts
+      const [balanceA, balanceB] = await Promise.all([
+        tokenAContract.balanceOf(this.wallet.address),
+        tokenBContract.balanceOf(this.wallet.address)
+      ]);
+      
+      // Calculate minimum amounts with slippage
+      const amountAMin = balanceA * (1000 - slippage * 10) / 1000;
+      const amountBMin = balanceB * (1000 - slippage * 10) / 1000;
+      
+      // Check if we need to approve the router for LP tokens
+      const lpTokenContract = this.getTokenContract(tokenAAddress); // Use token A contract for LP token
+      const allowance = await lpTokenContract.allowance(
+        this.wallet.address,
+        this.uniswapV2RouterContract.address
+      );
+      
+      if (allowance < liquidityAmount) {
+        const approveTx = await lpTokenContract.approve(
+          this.uniswapV2RouterContract.address,
+          MaxUint256
+        );
+        
+        await approveTx.wait();
+      }
+      
+      // Set deadline to 20 minutes from now
+      const deadline = Math.floor(Date.now() / 1000) + 20 * 60;
+      
+      // Remove liquidity
+      const tx = await this.uniswapV2RouterContract.removeLiquidity(
+        tokenAAddress,
+        tokenBAddress,
+        liquidityAmount,
+        amountAMin,
+        amountBMin,
+        this.wallet.address,
+        deadline
+      );
+      
+      const receipt = await tx.wait();
+      
+      return {
+        transactionHash: receipt.transactionHash,
+        tokenA: {
+          address: tokenAAddress,
+          symbol: tokenASymbol,
+          amount: formatUnits(balanceA, tokenADecimals)
+        },
+        tokenB: {
+          address: tokenBAddress,
+          symbol: tokenBSymbol,
+          amount: formatUnits(balanceB, tokenBDecimals)
+        }
+      };
+    } catch (error) {
+      throw new Error(`Removing Uniswap V2 liquidity failed: ${error.message}`);
     }
   }
 }
