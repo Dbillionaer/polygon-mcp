@@ -1,7 +1,7 @@
 // bridge-operations.js - Polygon Bridge Operations using @maticnetwork/maticjs
 const { Web3ClientPlugin } = require('@maticnetwork/maticjs-web3');
 const { MaticPOSClient } = require('@maticnetwork/maticjs');
-const { JsonRpcProvider, Wallet } = require('ethers');
+const { JsonRpcProvider, Wallet, parseEther, formatEther, parseUnits } = require('ethers');
 
 class PolygonBridge {
   constructor(config) {
@@ -43,7 +43,7 @@ class PolygonBridge {
     
     try {
       // Convert amount to wei
-      const amountWei = this.rootWallet.parseEther(amount.toString());
+      const amountWei = parseEther(amount.toString());
       
       // Deposit ETH to Polygon using MaticPOSClient
       const tx = await this.maticPOSClient.depositEther(amountWei, {
@@ -58,7 +58,7 @@ class PolygonBridge {
         transactionHash: receipt.transactionHash,
         blockNumber: receipt.blockNumber,
         from: receipt.from,
-        amount: this.rootWallet.formatEther(amountWei),
+        amount: formatEther(amountWei),
         status: "Deposit initiated"
       };
     } catch (error) {
@@ -78,7 +78,7 @@ class PolygonBridge {
       const decimals = await tokenContract.decimals();
       
       // Convert amount to token units
-      const amountInTokenUnits = this.rootWallet.parseUnits(amount.toString(), decimals);
+      const amountInTokenUnits = parseUnits(amount.toString(), decimals);
       
       // Deposit tokens to Polygon using MaticPOSClient
       const tx = await this.maticPOSClient.depositERC20ForUser(
@@ -115,7 +115,7 @@ class PolygonBridge {
     
     try {
       // Convert amount to wei
-      const amountWei = this.childWallet.parseEther(amount.toString());
+      const amountWei = parseEther(amount.toString());
       
       // Withdraw POL using MaticPOSClient
       const tx = await this.maticPOSClient.withdrawMatic(amountWei, {
@@ -130,7 +130,7 @@ class PolygonBridge {
         transactionHash: receipt.transactionHash,
         blockNumber: receipt.blockNumber,
         from: receipt.from,
-        amount: this.childWallet.formatEther(amountWei),
+        amount: formatEther(amountWei),
         status: "Withdrawal initiated, waiting for checkpoint"
       };
     } catch (error) {
@@ -155,7 +155,7 @@ class PolygonBridge {
       const decimals = await tokenContract.decimals();
       
       // Convert amount to token units
-      const amountInTokenUnits = this.childWallet.parseUnits(amount.toString(), decimals);
+      const amountInTokenUnits = parseUnits(amount.toString(), decimals);
       
       // Withdraw tokens using MaticPOSClient
       const tx = await this.maticPOSClient.withdrawERC20(
