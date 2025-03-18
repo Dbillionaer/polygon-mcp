@@ -23,9 +23,22 @@ A Model Context Protocol (MCP) server for interacting with the Polygon blockchai
 - Support for both ETH and ERC20 token bridging
 
 ### DeFi Tools
-- `swap-tokens`: Swap tokens using QuickSwap
-- `get-swap-quote`: Get a price quote for a token swap
-- `add-liquidity`: Add liquidity to a QuickSwap pool
+- QuickSwap DEX interactions:
+  - `swap-tokens`: Swap tokens using QuickSwap
+  - `get-swap-quote`: Get a price quote for a token swap
+  - `add-liquidity`: Add liquidity to a QuickSwap pool
+- Uniswap V3 interactions:
+  - `uniswapV3SwapSingle`: Execute single-hop swaps
+  - `uniswapV3SwapMulti`: Execute multi-hop swaps
+  - `getUniswapV3QuoteSingle`: Get quotes for single-hop swaps
+  - `getUniswapV3QuoteMulti`: Get quotes for multi-hop swaps
+- Polymarket prediction market interactions:
+  - `getPolymarketInfo`: Get comprehensive market information
+  - `getPolymarketPositionPrice`: Get position token prices
+  - `placePolymarketBet`: Place bets by buying position tokens
+  - `sellPolymarketPosition`: Sell position tokens back to market
+  - `getPolymarketPositions`: Get user positions for a market
+  - `getPolymarketOutcomes`: Get detailed market outcomes and prices
 
 ### Simulation Tools
 - `simulate-transaction`: Simulate a transaction to preview its effects
@@ -126,6 +139,10 @@ For Cursor/Claude Dev:
 - Robust input validation
 - Comprehensive error handling
 - Structured logging system
+- Support for multiple DeFi protocols (QuickSwap, Uniswap V3, Polymarket)
+- Slippage protection for trades
+- Automatic token approvals
+- Multi-hop trading support
 
 ## Security Considerations
 

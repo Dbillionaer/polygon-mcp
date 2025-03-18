@@ -47,12 +47,32 @@ const ERC20_ABI = [
   "function symbol() view returns (string)"
 ];
 
+// Polymarket Factory ABI
+const POLYMARKET_FACTORY_ABI = [
+  "function getMarket(address market) external view returns (tuple(address creator, uint256 creationTimestamp, uint256 endTimestamp, uint256 resolutionTimestamp, bool resolved, string question, string[] outcomes))",
+  "function createMarket(string question, uint256 endTimestamp, string[] outcomes) external returns (address)",
+  "function resolveMarket(address market, uint256 outcomeIndex) external"
+];
+
+// Polymarket Market ABI
+const POLYMARKET_MARKET_ABI = [
+  "function getPositionToken(uint256 outcomeIndex) external view returns (address)",
+  "function getTotalSupply() external view returns (uint256)",
+  "function getOutcomeCount() external view returns (uint256)",
+  "function getOutcome(uint256 index) external view returns (string)",
+  "function getEndTimestamp() external view returns (uint256)",
+  "function getResolutionTimestamp() external view returns (uint256)",
+  "function isResolved() external view returns (bool)",
+  "function getQuestion() external view returns (string)"
+];
+
 class DeFiProtocols {
   constructor(config) {
     this.rpcUrl = config.rpcUrl;
     this.quickswapRouter = config.quickswapRouter;
     this.uniswapRouter = config.uniswapRouter;
     this.tokenAddresses = config.tokenAddresses;
+    this.polymarketFactory = config.polymarketFactory;
     
     // Initialize provider
     this.provider = new JsonRpcProvider(this.rpcUrl);
@@ -71,6 +91,15 @@ class DeFiProtocols {
       this.uniswapRouterContract = new Contract(
         this.uniswapRouter,
         UNISWAP_ROUTER_ABI,
+        this.provider
+      );
+    }
+
+    // Initialize Polymarket factory contract
+    if (this.polymarketFactory) {
+      this.polymarketFactoryContract = new Contract(
+        this.polymarketFactory,
+        POLYMARKET_FACTORY_ABI,
         this.provider
       );
     }
@@ -762,6 +791,412 @@ class DeFiProtocols {
       };
     } catch (error) {
       throw new Error(`QuickSwap multi-hop swap failed: ${error.message}`);
+    }
+  }
+
+  /**
+   * Gets comprehensive information about a Polymarket market
+   * @param {string} marketAddress - The address of the Polymarket market contract
+   * @returns {Promise<Object>} Market information including:
+   *   - creator: Address of market creator
+   *   - creationTimestamp: When the market was created
+   *   - endTimestamp: When the market ends
+   *   - resolutionTimestamp: When the market was resolved
+   *   - resolved: Whether the market is resolved
+   *   - question: The market question
+   *   - outcomes: Array of possible outcomes
+   *   - positionTokens: Array of position token addresses
+   *   - isResolved: Whether the market is resolved
+   *   - outcomeCount: Number of possible outcomes
+   * @throws {Error} If Polymarket factory is not configured or if market info cannot be retrieved
+   * @example
+   * const marketInfo = await defi.getPolymarketInfo("0x123...");
+   * console.log(marketInfo.question); // "Who will win the 2024 US Presidential Election?"
+   */
+  async getPolymarketInfo(marketAddress) {
+    if (!this.polymarketFactoryContract) {
+      throw new Error("Polymarket factory not configured");
+    }
+
+    try {
+      // Get market details from factory
+      const marketInfo = await this.polymarketFactoryContract.getMarket(marketAddress);
+      
+      // Initialize market contract
+      const marketContract = new Contract(
+        marketAddress,
+        POLYMARKET_MARKET_ABI,
+        this.provider
+      );
+
+      // Get additional market details
+      const [outcomeCount, endTimestamp, isResolved] = await Promise.all([
+        marketContract.getOutcomeCount(),
+        marketContract.getEndTimestamp(),
+        marketContract.isResolved()
+      ]);
+
+      // Get position token addresses for each outcome
+      const positionTokens = await Promise.all(
+        Array.from({ length: outcomeCount }, (_, i) => 
+          marketContract.getPositionToken(i)
+        )
+      );
+
+      return {
+        creator: marketInfo.creator,
+        creationTimestamp: marketInfo.creationTimestamp,
+        endTimestamp: marketInfo.endTimestamp,
+        resolutionTimestamp: marketInfo.resolutionTimestamp,
+        resolved: marketInfo.resolved,
+        question: marketInfo.question,
+        outcomes: marketInfo.outcomes,
+        positionTokens,
+        isResolved,
+        outcomeCount
+      };
+    } catch (error) {
+      throw new Error(`Failed to get Polymarket info: ${error.message}`);
+    }
+  }
+
+  /**
+   * Gets the current price of a position token for a specific outcome
+   * @param {string} marketAddress - The address of the Polymarket market contract
+   * @param {number} outcomeIndex - The index of the outcome (0-based)
+   * @returns {Promise<Object>} Position token information including:
+   *   - price: Current price of the position token
+   *   - totalSupply: Total supply of position tokens
+   *   - positionTokenAddress: Address of the position token contract
+   * @throws {Error} If Polymarket factory is not configured or if price cannot be retrieved
+   * @example
+   * const { price } = await defi.getPolymarketPositionPrice("0x123...", 0);
+   * console.log(price); // 0.5 (50% probability)
+   */
+  async getPolymarketPositionPrice(marketAddress, outcomeIndex) {
+    if (!this.polymarketFactoryContract) {
+      throw new Error("Polymarket factory not configured");
+    }
+
+    try {
+      // Initialize market contract
+      const marketContract = new Contract(
+        marketAddress,
+        POLYMARKET_MARKET_ABI,
+        this.provider
+      );
+
+      // Get position token address
+      const positionTokenAddress = await marketContract.getPositionToken(outcomeIndex);
+      
+      // Get position token contract
+      const positionTokenContract = new Contract(
+        positionTokenAddress,
+        ERC20_ABI,
+        this.provider
+      );
+
+      // Get total supply and decimals
+      const [totalSupply, decimals] = await Promise.all([
+        positionTokenContract.totalSupply(),
+        positionTokenContract.decimals()
+      ]);
+
+      // Calculate price (1 / total supply)
+      const price = 1 / parseFloat(formatUnits(totalSupply, decimals));
+
+      return {
+        price,
+        totalSupply: formatUnits(totalSupply, decimals),
+        positionTokenAddress
+      };
+    } catch (error) {
+      throw new Error(`Failed to get position token price: ${error.message}`);
+    }
+  }
+
+  /**
+   * Places a bet by buying position tokens for a specific outcome
+   * @param {string} marketAddress - The address of the Polymarket market contract
+   * @param {number} outcomeIndex - The index of the outcome to bet on (0-based)
+   * @param {number|string} amount - Amount of position tokens to buy
+   * @returns {Promise<Object>} Transaction details including:
+   *   - transactionHash: Hash of the transaction
+   *   - marketAddress: Address of the market
+   *   - outcomeIndex: Index of the outcome bet on
+   *   - amount: Amount of tokens bought
+   *   - price: Price at which tokens were bought
+   *   - expectedTokens: Expected number of tokens to receive
+   * @throws {Error} If wallet is not connected, Polymarket factory is not configured, or transaction fails
+   * @example
+   * const result = await defi.placePolymarketBet("0x123...", 0, "100");
+   * console.log(result.expectedTokens); // "99" (with 1% slippage)
+   */
+  async placePolymarketBet(marketAddress, outcomeIndex, amount) {
+    if (!this.wallet) {
+      throw new Error("Wallet not connected");
+    }
+
+    if (!this.polymarketFactoryContract) {
+      throw new Error("Polymarket factory not configured");
+    }
+
+    try {
+      // Get market info and position token details
+      const marketInfo = await this.getPolymarketInfo(marketAddress);
+      const positionTokenAddress = marketInfo.positionTokens[outcomeIndex];
+      
+      // Get position token contract
+      const positionTokenContract = new Contract(
+        positionTokenAddress,
+        ERC20_ABI,
+        this.wallet
+      );
+
+      // Get token decimals
+      const decimals = await positionTokenContract.decimals();
+      
+      // Convert amount to token units
+      const amountIn = parseUnits(amount.toString(), decimals);
+
+      // Check if we need to approve the position token contract
+      const allowance = await positionTokenContract.allowance(
+        this.wallet.address,
+        marketAddress
+      );
+
+      if (allowance < amountIn) {
+        const approveTx = await positionTokenContract.approve(
+          marketAddress,
+          MaxUint256
+        );
+        await approveTx.wait();
+      }
+
+      // Get current price
+      const { price } = await this.getPolymarketPositionPrice(marketAddress, outcomeIndex);
+
+      // Calculate expected tokens with 1% slippage tolerance
+      const expectedTokens = amountIn * (1 - 0.01);
+      const minTokens = parseUnits(expectedTokens.toString(), decimals);
+
+      // Execute buy transaction
+      const tx = await positionTokenContract.transferFrom(
+        marketAddress,
+        this.wallet.address,
+        minTokens
+      );
+
+      const receipt = await tx.wait();
+
+      return {
+        transactionHash: receipt.transactionHash,
+        marketAddress,
+        outcomeIndex,
+        amount,
+        price,
+        expectedTokens: formatUnits(expectedTokens, decimals)
+      };
+    } catch (error) {
+      throw new Error(`Failed to place Polymarket bet: ${error.message}`);
+    }
+  }
+
+  /**
+   * Sells position tokens back to the market
+   * @param {string} marketAddress - The address of the Polymarket market contract
+   * @param {number} outcomeIndex - The index of the outcome to sell (0-based)
+   * @param {number|string} amount - Amount of position tokens to sell
+   * @returns {Promise<Object>} Transaction details including:
+   *   - transactionHash: Hash of the transaction
+   *   - marketAddress: Address of the market
+   *   - outcomeIndex: Index of the outcome sold
+   *   - amount: Amount of tokens sold
+   *   - price: Price at which tokens were sold
+   *   - expectedReturn: Expected return amount
+   * @throws {Error} If wallet is not connected, Polymarket factory is not configured, or transaction fails
+   * @example
+   * const result = await defi.sellPolymarketPosition("0x123...", 0, "100");
+   * console.log(result.expectedReturn); // "49.5" (with 1% slippage)
+   */
+  async sellPolymarketPosition(marketAddress, outcomeIndex, amount) {
+    if (!this.wallet) {
+      throw new Error("Wallet not connected");
+    }
+
+    if (!this.polymarketFactoryContract) {
+      throw new Error("Polymarket factory not configured");
+    }
+
+    try {
+      // Get market info and position token details
+      const marketInfo = await this.getPolymarketInfo(marketAddress);
+      const positionTokenAddress = marketInfo.positionTokens[outcomeIndex];
+      
+      // Get position token contract
+      const positionTokenContract = new Contract(
+        positionTokenAddress,
+        ERC20_ABI,
+        this.wallet
+      );
+
+      // Get token decimals
+      const decimals = await positionTokenContract.decimals();
+      
+      // Convert amount to token units
+      const amountIn = parseUnits(amount.toString(), decimals);
+
+      // Check if we need to approve the market contract
+      const allowance = await positionTokenContract.allowance(
+        this.wallet.address,
+        marketAddress
+      );
+
+      if (allowance < amountIn) {
+        const approveTx = await positionTokenContract.approve(
+          marketAddress,
+          MaxUint256
+        );
+        await approveTx.wait();
+      }
+
+      // Get current price
+      const { price } = await this.getPolymarketPositionPrice(marketAddress, outcomeIndex);
+
+      // Calculate expected return with 1% slippage tolerance
+      const expectedReturn = amountIn * price * (1 - 0.01);
+      const minReturn = parseUnits(expectedReturn.toString(), decimals);
+
+      // Execute sell transaction
+      const tx = await positionTokenContract.transfer(
+        marketAddress,
+        amountIn
+      );
+
+      const receipt = await tx.wait();
+
+      return {
+        transactionHash: receipt.transactionHash,
+        marketAddress,
+        outcomeIndex,
+        amount,
+        price,
+        expectedReturn: formatUnits(expectedReturn, decimals)
+      };
+    } catch (error) {
+      throw new Error(`Failed to sell Polymarket position: ${error.message}`);
+    }
+  }
+
+  /**
+   * Gets all positions held by the connected wallet for a specific market
+   * @param {string} marketAddress - The address of the Polymarket market contract
+   * @returns {Promise<Object>} Position information including:
+   *   - marketAddress: Address of the market
+   *   - positions: Array of positions, each containing:
+   *     - outcomeIndex: Index of the outcome
+   *     - outcome: Text description of the outcome
+   *     - balance: Amount of position tokens held
+   *     - tokenAddress: Address of the position token contract
+   * @throws {Error} If wallet is not connected, Polymarket factory is not configured, or positions cannot be retrieved
+   * @example
+   * const { positions } = await defi.getPolymarketPositions("0x123...");
+   * console.log(positions[0].balance); // "100"
+   */
+  async getPolymarketPositions(marketAddress) {
+    if (!this.wallet) {
+      throw new Error("Wallet not connected");
+    }
+
+    if (!this.polymarketFactoryContract) {
+      throw new Error("Polymarket factory not configured");
+    }
+
+    try {
+      // Get market info
+      const marketInfo = await this.getPolymarketInfo(marketAddress);
+      
+      // Get balances for each position token
+      const positions = await Promise.all(
+        marketInfo.positionTokens.map(async (tokenAddress, index) => {
+          const positionTokenContract = new Contract(
+            tokenAddress,
+            ERC20_ABI,
+            this.provider
+          );
+
+          const [balance, decimals] = await Promise.all([
+            positionTokenContract.balanceOf(this.wallet.address),
+            positionTokenContract.decimals()
+          ]);
+
+          return {
+            outcomeIndex: index,
+            outcome: marketInfo.outcomes[index],
+            balance: formatUnits(balance, decimals),
+            tokenAddress
+          };
+        })
+      );
+
+      return {
+        marketAddress,
+        positions: positions.filter(p => parseFloat(p.balance) > 0)
+      };
+    } catch (error) {
+      throw new Error(`Failed to get Polymarket positions: ${error.message}`);
+    }
+  }
+
+  /**
+   * Gets detailed information about all outcomes in a market
+   * @param {string} marketAddress - The address of the Polymarket market contract
+   * @returns {Promise<Object>} Market outcomes information including:
+   *   - marketAddress: Address of the market
+   *   - question: The market question
+   *   - outcomes: Array of outcomes, each containing:
+   *     - index: Index of the outcome
+   *     - outcome: Text description of the outcome
+   *     - price: Current price of the position token
+   *     - positionToken: Address of the position token contract
+   *   - endTimestamp: When the market ends
+   *   - isResolved: Whether the market is resolved
+   * @throws {Error} If Polymarket factory is not configured or if outcomes cannot be retrieved
+   * @example
+   * const { outcomes } = await defi.getPolymarketOutcomes("0x123...");
+   * console.log(outcomes[0].price); // 0.5
+   */
+  async getPolymarketOutcomes(marketAddress) {
+    if (!this.polymarketFactoryContract) {
+      throw new Error("Polymarket factory not configured");
+    }
+
+    try {
+      // Get market info
+      const marketInfo = await this.getPolymarketInfo(marketAddress);
+      
+      // Get prices for each outcome
+      const outcomes = await Promise.all(
+        marketInfo.outcomes.map(async (outcome, index) => {
+          const { price } = await this.getPolymarketPositionPrice(marketAddress, index);
+          return {
+            index,
+            outcome,
+            price,
+            positionToken: marketInfo.positionTokens[index]
+          };
+        })
+      );
+
+      return {
+        marketAddress,
+        question: marketInfo.question,
+        outcomes,
+        endTimestamp: marketInfo.endTimestamp,
+        isResolved: marketInfo.isResolved
+      };
+    } catch (error) {
+      throw new Error(`Failed to get Polymarket outcomes: ${error.message}`);
     }
   }
 }
