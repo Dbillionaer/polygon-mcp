@@ -9,18 +9,23 @@ A Model Context Protocol (MCP) server for interacting with the Polygon blockchai
 - `get-testnet-matic`: Request testnet POL from a faucet (Mumbai testnet only)
 - `list-balances`: List token balances for the connected wallet
 - `transfer-funds`: Transfer POL or ERC20 tokens to another address
+- Enhanced wallet connection validation
+- Improved error handling with detailed messages
 
 ### Contract Tools
 - `deploy-contract`: Deploy a smart contract to the Polygon network
 - `verify-contract`: Verify a deployed contract on Polygonscan
 - `list-contract-templates`: List available contract templates for deployment
 - Support for ERC20, ERC721, and ERC1155 token standards
+- Comprehensive input parameter validation
 
 ### L2 Bridge Tools
 - `bridge-to-polygon`: Bridge assets from Ethereum to Polygon
 - `bridge-to-ethereum`: Bridge assets from Polygon back to Ethereum
 - `check-bridge-status`: Check the status of a bridge transaction
 - Support for both ETH and ERC20 token bridging
+- Standardized MaticPOSClient initialization
+- Enhanced error handling for bridge operations
 
 ### DeFi Tools
 - QuickSwap DEX interactions:
@@ -44,12 +49,17 @@ A Model Context Protocol (MCP) server for interacting with the Polygon blockchai
   - `sellPolymarketPosition`: Sell position tokens back to market
   - `getPolymarketPositions`: Get user positions for a market
   - `getPolymarketOutcomes`: Get detailed market outcomes and prices
+- Configurable slippage protection
+- Customizable transaction deadlines
+- Gas limit optimization
 
 ### Simulation Tools
 - `simulate-transaction`: Simulate a transaction to preview its effects
 - Gas estimation with EIP-1559 support
 - Token transfer detection and analysis
 - Contract interaction simulation
+- Enhanced BigInt handling
+- Improved error context
 
 ### Network Tools
 - `get-gas-price`: Get current gas prices on Polygon
@@ -87,6 +97,10 @@ POLYGONSCAN_API_KEY=YOUR_POLYGONSCAN_API_KEY
 # Wallet (IMPORTANT: Use secure key management in production)
 PRIVATE_KEY=your_private_key_here
 DEFAULT_NETWORK=mumbai
+
+# DeFi Configuration (Optional)
+DEFAULT_SLIPPAGE=0.5
+DEFAULT_DEADLINE_MINUTES=20
 ```
 
 ### Running the Server
@@ -122,7 +136,9 @@ For Cursor/Claude Dev:
         "ETHEREUM_RPC_URL": "https://eth-mainnet.alchemyapi.io/v2/YOUR_ALCHEMY_KEY",
         "POLYGONSCAN_API_KEY": "YOUR_POLYGONSCAN_API_KEY",
         "PRIVATE_KEY": "your_private_key_here",
-        "DEFAULT_NETWORK": "mumbai"
+        "DEFAULT_NETWORK": "mumbai",
+        "DEFAULT_SLIPPAGE": "0.5",
+        "DEFAULT_DEADLINE_MINUTES": "20"
       },
       "disabled": false,
       "autoApprove": []
@@ -137,17 +153,21 @@ For Cursor/Claude Dev:
 - ethers v6.13.5 for Ethereum interactions
 - @maticnetwork/maticjs v2.0.0 for Polygon bridge operations
 - @maticnetwork/maticjs-web3 v1.0.0 for Web3 compatibility
+- axios for HTTP requests
+- Additional utility packages for enhanced functionality
 
 ### Key Features
 - Full support for EIP-1559 gas fee mechanism
 - BigInt support for large numbers
 - Robust input validation
-- Comprehensive error handling
+- Comprehensive error handling with detailed context
 - Structured logging system
 - Support for multiple DeFi protocols (QuickSwap, Uniswap V2, Uniswap V3, Polymarket)
-- Slippage protection for trades
+- Configurable slippage protection
 - Automatic token approvals
 - Multi-hop trading support
+- Enhanced security measures
+- Improved error reporting
 
 ## Security Considerations
 
@@ -158,6 +178,9 @@ This server handles private keys and sensitive blockchain operations. For produc
 3. Implement proper authentication and authorization
 4. Add rate limiting to prevent abuse
 5. Add comprehensive logging and monitoring
+6. Validate all input parameters
+7. Implement proper error handling
+8. Use secure configuration management
 
 ## Project Structure
 
