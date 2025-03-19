@@ -25,6 +25,7 @@
     "@maticnetwork/maticjs": "^2.0.0",
     "@maticnetwork/maticjs-web3": "^1.0.0",
     "@modelcontextprotocol/sdk": "^0.1.0",
+    "axios": "^1.6.0",
     "dotenv": "^16.0.3",
     "ethers": "^6.13.5"
   },

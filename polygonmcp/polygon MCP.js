@@ -11,6 +11,7 @@ const {
 const { MaticPOSClient } = require('@maticnetwork/maticjs');
 const { TransactionSimulator } = require('./transaction-simulation');
 const { ContractTemplates } = require('./contract-templates');
+const { ErrorCodes, createWalletError, createTransactionError } = require('./errors');
 
 // Standard ERC20 ABI
 const ERC20_ABI = [
@@ -52,12 +53,13 @@ class PolygonMCPServer {
     
     // Initialize MaticPOSClient for bridge operations
     this.maticClient = new MaticPOSClient({
-      network: 'mainnet',
+      network: 'mainnet', // or 'testnet' based on your needs
       version: 'v1',
       maticProvider: this.provider,
       parentProvider: this.parentProvider,
-      parentDefaultOptions: { from: config.rootChainAddress },
-      maticDefaultOptions: { from: config.childChainAddress }
+      posRootChainManager: config.posRootChainManager,
+      parentDefaultOptions: { confirmations: 2, from: config.rootChainAddress },
+      maticDefaultOptions: { confirmations: 2, from: config.childChainAddress }
     });
     
     // Initialize transaction simulator
@@ -76,8 +78,27 @@ class PolygonMCPServer {
   
   // Connect wallet for operations
   connectWallet(privateKey) {
+    if (!privateKey) {
+      throw createWalletError(
+        ErrorCodes.WALLET_NOT_CONNECTED,
+        "Private key is required to connect wallet",
+        { context: "PolygonMCPServer.connectWallet" }
+      );
+    }
     this.wallet = new Wallet(privateKey, this.provider);
     this.simulator.connectWallet(privateKey);
+  }
+  
+  // Check if wallet is connected
+  checkWalletConnected() {
+    if (!this.wallet) {
+      throw createWalletError(
+        ErrorCodes.WALLET_NOT_CONNECTED,
+        "Wallet not connected",
+        { context: "PolygonMCPServer" }
+      );
+    }
+    return true;
   }
   
   // Helper to resolve token address from symbol or address
@@ -91,11 +112,17 @@ class PolygonMCPServer {
       return this.tokenAddresses[upperToken];
     }
     
-    throw new Error(`Unknown token: ${token}`);
+    throw createTransactionError(
+      ErrorCodes.INVALID_ADDRESS,
+      `Unknown token: ${token}`,
+      { token }
+    );
   }
   
   // Bridge operations
   async depositETH(amount) {
+    this.checkWalletConnected();
+    
     try {
       const tx = await this.maticClient.depositEther(amount, {
         from: this.wallet.address,
@@ -107,11 +134,17 @@ class PolygonMCPServer {
         status: 'pending'
       };
     } catch (error) {
-      throw new Error(`Deposit failed: ${error.message}`);
+      throw createTransactionError(
+        ErrorCodes.BRIDGE_ERROR,
+        `Deposit failed: ${error.message}`,
+        { amount }
+      );
     }
   }
   
   async withdrawETH(amount) {
+    this.checkWalletConnected();
+    
     try {
       const tx = await this.maticClient.withdrawEther(amount, {
         from: this.wallet.address,
@@ -123,11 +156,17 @@ class PolygonMCPServer {
         status: 'pending'
       };
     } catch (error) {
-      throw new Error(`Withdrawal failed: ${error.message}`);
+      throw createTransactionError(
+        ErrorCodes.BRIDGE_ERROR,
+        `Withdrawal failed: ${error.message}`,
+        { amount }
+      );
     }
   }
   
   async depositToken(token, amount) {
+    this.checkWalletConnected();
+    
     try {
       const tokenAddress = this.resolveTokenAddress(token);
       const tx = await this.maticClient.depositERC20ForUser(
@@ -145,11 +184,17 @@ class PolygonMCPServer {
         status: 'pending'
       };
     } catch (error) {
-      throw new Error(`Token deposit failed: ${error.message}`);
+      throw createTransactionError(
+        ErrorCodes.BRIDGE_ERROR,
+        `Token deposit failed: ${error.message}`,
+        { token, amount }
+      );
     }
   }
   
   async withdrawToken(token, amount) {
+    this.checkWalletConnected();
+    
     try {
       const tokenAddress = this.resolveTokenAddress(token);
       const tx = await this.maticClient.withdrawERC20(
@@ -166,7 +211,11 @@ class PolygonMCPServer {
         status: 'pending'
       };
     } catch (error) {
-      throw new Error(`Token withdrawal failed: ${error.message}`);
+      throw createTransactionError(
+        ErrorCodes.BRIDGE_ERROR,
+        `Token withdrawal failed: ${error.message}`,
+        { token, amount }
+      );
     }
   }
   
@@ -198,54 +247,244 @@ class PolygonMCPServer {
   
   // Token balance queries
   async getTokenBalance(token, address) {
-    const tokenContract = this.createERC20(token);
-    return await tokenContract.balanceOf(address);
+    try {
+      if (!isAddress(address)) {
+        throw createTransactionError(
+          ErrorCodes.INVALID_ADDRESS,
+          `Invalid address: ${address}`,
+          { token, address }
+        );
+      }
+      
+      const tokenAddress = this.resolveTokenAddress(token);
+      const tokenContract = this.createERC20(tokenAddress);
+      
+      return await tokenContract.balanceOf(address);
+    } catch (error) {
+      if (error.code && error.name) {
+        throw error;  // Re-throw our custom errors
+      }
+      
+      throw createTransactionError(
+        ErrorCodes.CONTRACT_ERROR,
+        `Failed to get token balance: ${error.message}`,
+        { token, address }
+      );
+    }
   }
   
   async getTokenAllowance(token, owner, spender) {
-    const tokenContract = this.createERC20(token);
-    return await tokenContract.allowance(owner, spender);
+    try {
+      if (!isAddress(owner) || !isAddress(spender)) {
+        throw createTransactionError(
+          ErrorCodes.INVALID_ADDRESS,
+          `Invalid address: ${!isAddress(owner) ? owner : spender}`,
+          { token, owner, spender }
+        );
+      }
+      
+      const tokenAddress = this.resolveTokenAddress(token);
+      const tokenContract = this.createERC20(tokenAddress);
+      
+      return await tokenContract.allowance(owner, spender);
+    } catch (error) {
+      if (error.code && error.name) {
+        throw error;  // Re-throw our custom errors
+      }
+      
+      throw createTransactionError(
+        ErrorCodes.CONTRACT_ERROR,
+        `Failed to get token allowance: ${error.message}`,
+        { token, owner, spender }
+      );
+    }
   }
   
   // NFT queries
   async getNFTInfo(address) {
-    const nftContract = this.createERC721(address);
-    return {
-      name: await nftContract.name(),
-      symbol: await nftContract.symbol(),
-      totalSupply: await nftContract.totalSupply()
-    };
+    try {
+      if (!isAddress(address)) {
+        throw createTransactionError(
+          ErrorCodes.INVALID_ADDRESS,
+          `Invalid NFT address: ${address}`,
+          { address }
+        );
+      }
+      
+      const nftContract = this.createERC721(address);
+      
+      return {
+        name: await nftContract.name(),
+        symbol: await nftContract.symbol(),
+        totalSupply: await nftContract.totalSupply()
+      };
+    } catch (error) {
+      if (error.code && error.name) {
+        throw error;  // Re-throw our custom errors
+      }
+      
+      throw createTransactionError(
+        ErrorCodes.CONTRACT_ERROR,
+        `Failed to get NFT info: ${error.message}`,
+        { address }
+      );
+    }
   }
   
   async getNFTTokenInfo(address, tokenId) {
-    const nftContract = this.createERC721(address);
-    return {
-      owner: await nftContract.ownerOf(tokenId),
-      tokenURI: await nftContract.tokenURI(tokenId)
-    };
+    try {
+      if (!isAddress(address)) {
+        throw createTransactionError(
+          ErrorCodes.INVALID_ADDRESS,
+          `Invalid NFT address: ${address}`,
+          { address, tokenId }
+        );
+      }
+      
+      const nftContract = this.createERC721(address);
+      
+      return {
+        owner: await nftContract.ownerOf(tokenId),
+        tokenURI: await nftContract.tokenURI(tokenId)
+      };
+    } catch (error) {
+      if (error.code && error.name) {
+        throw error;  // Re-throw our custom errors
+      }
+      
+      throw createTransactionError(
+        ErrorCodes.CONTRACT_ERROR,
+        `Failed to get NFT token info: ${error.message}`,
+        { address, tokenId }
+      );
+    }
   }
   
   async getNFTOwnerTokens(address, owner) {
-    const nftContract = this.createERC721(address);
-    return await nftContract.balanceOf(owner);
+    try {
+      if (!isAddress(address) || !isAddress(owner)) {
+        throw createTransactionError(
+          ErrorCodes.INVALID_ADDRESS,
+          `Invalid address: ${!isAddress(address) ? address : owner}`,
+          { address, owner }
+        );
+      }
+      
+      const nftContract = this.createERC721(address);
+      return await nftContract.balanceOf(owner);
+    } catch (error) {
+      if (error.code && error.name) {
+        throw error;  // Re-throw our custom errors
+      }
+      
+      throw createTransactionError(
+        ErrorCodes.CONTRACT_ERROR,
+        `Failed to get NFT owner tokens: ${error.message}`,
+        { address, owner }
+      );
+    }
   }
   
   // Multi-token queries
   async getMultiTokenURI(address, tokenId) {
-    const multiTokenContract = this.createERC1155(address);
-    return await multiTokenContract.uri(tokenId);
+    try {
+      if (!isAddress(address)) {
+        throw createTransactionError(
+          ErrorCodes.INVALID_ADDRESS,
+          `Invalid ERC1155 address: ${address}`,
+          { address, tokenId }
+        );
+      }
+      
+      if (tokenId === undefined || tokenId === null) {
+        throw createTransactionError(
+          ErrorCodes.INVALID_PARAMETERS,
+          "Token ID is required",
+          { address }
+        );
+      }
+      
+      const multiTokenContract = this.createERC1155(address);
+      return await multiTokenContract.uri(tokenId);
+    } catch (error) {
+      if (error.code && error.name) {
+        throw error;  // Re-throw our custom errors
+      }
+      
+      throw createTransactionError(
+        ErrorCodes.CONTRACT_ERROR,
+        `Failed to get multi-token URI: ${error.message}`,
+        { address, tokenId }
+      );
+    }
   }
   
   async getMultiTokenBalance(address, account, tokenId) {
-    const multiTokenContract = this.createERC1155(address);
-    return await multiTokenContract.balanceOf(account, tokenId);
+    try {
+      if (!isAddress(address) || !isAddress(account)) {
+        throw createTransactionError(
+          ErrorCodes.INVALID_ADDRESS,
+          `Invalid address: ${!isAddress(address) ? address : account}`,
+          { address, account, tokenId }
+        );
+      }
+      
+      if (tokenId === undefined || tokenId === null) {
+        throw createTransactionError(
+          ErrorCodes.INVALID_PARAMETERS,
+          "Token ID is required",
+          { address, account }
+        );
+      }
+      
+      const multiTokenContract = this.createERC1155(address);
+      return await multiTokenContract.balanceOf(account, tokenId);
+    } catch (error) {
+      if (error.code && error.name) {
+        throw error;  // Re-throw our custom errors
+      }
+      
+      throw createTransactionError(
+        ErrorCodes.CONTRACT_ERROR,
+        `Failed to get multi-token balance: ${error.message}`,
+        { address, account, tokenId }
+      );
+    }
   }
   
   async getMultiTokenBalances(address, account, tokenIds) {
-    const multiTokenContract = this.createERC1155(address);
-    return await Promise.all(
-      tokenIds.map(tokenId => multiTokenContract.balanceOf(account, tokenId))
-    );
+    try {
+      if (!isAddress(address) || !isAddress(account)) {
+        throw createTransactionError(
+          ErrorCodes.INVALID_ADDRESS,
+          `Invalid address: ${!isAddress(address) ? address : account}`,
+          { address, account }
+        );
+      }
+      
+      if (!Array.isArray(tokenIds) || tokenIds.length === 0) {
+        throw createTransactionError(
+          ErrorCodes.INVALID_PARAMETERS,
+          "Token IDs must be a non-empty array",
+          { address, account }
+        );
+      }
+      
+      const multiTokenContract = this.createERC1155(address);
+      return await Promise.all(
+        tokenIds.map(tokenId => multiTokenContract.balanceOf(account, tokenId))
+      );
+    } catch (error) {
+      if (error.code && error.name) {
+        throw error;  // Re-throw our custom errors
+      }
+      
+      throw createTransactionError(
+        ErrorCodes.CONTRACT_ERROR,
+        `Failed to get multi-token balances: ${error.message}`,
+        { address, account, tokenIds }
+      );
+    }
   }
 }
 

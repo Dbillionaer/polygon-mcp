@@ -1,5 +1,4 @@
 // bridge-operations.js - Polygon Bridge Operations using @maticnetwork/maticjs
-const { Web3ClientPlugin } = require('@maticnetwork/maticjs-web3');
 const { MaticPOSClient } = require('@maticnetwork/maticjs');
 const { JsonRpcProvider, Wallet, parseEther, formatEther, parseUnits } = require('ethers');
 

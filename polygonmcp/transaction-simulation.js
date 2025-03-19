@@ -11,6 +11,7 @@ const {
   isAddress
 } = require('ethers');
 const axios = require('axios');
+const { ErrorCodes, createTransactionError, createWalletError } = require('./errors');
 
 // ERC20 ABI for token interactions
 const ERC20_ABI = [
@@ -36,7 +37,26 @@ class TransactionSimulator {
   
   // Connect wallet for operations
   connectWallet(privateKey) {
+    if (!privateKey) {
+      throw createWalletError(
+        ErrorCodes.WALLET_NOT_CONNECTED,
+        "Private key is required to connect wallet",
+        { context: "TransactionSimulator.connectWallet" }
+      );
+    }
     this.wallet = new Wallet(privateKey, this.provider);
+  }
+  
+  // Check if wallet is connected
+  checkWalletConnected() {
+    if (!this.wallet) {
+      throw createWalletError(
+        ErrorCodes.WALLET_NOT_CONNECTED,
+        "Wallet not connected",
+        { context: "TransactionSimulator" }
+      );
+    }
+    return true;
   }
   
   // Helper to resolve token address from symbol or address
@@ -50,7 +70,11 @@ class TransactionSimulator {
       return this.tokenAddresses[upperToken];
     }
     
-    throw new Error(`Unknown token: ${token}`);
+    throw createTransactionError(
+      ErrorCodes.INVALID_ADDRESS,
+      `Unknown token: ${token}`,
+      { token }
+    );
   }
   
   // Simulate a transaction
@@ -221,7 +245,11 @@ class TransactionSimulator {
       
       return result;
     } catch (error) {
-      throw new Error(`Analysis failed: ${error.message}`);
+      throw createTransactionError(
+        ErrorCodes.TRANSACTION_FAILED,
+        `Analysis failed: ${error.message}`,
+        { txHash }
+      );
     }
   }
   
@@ -280,7 +308,11 @@ class TransactionSimulator {
         recommendedGasLimit: gasLimit.toString()
       };
     } catch (error) {
-      throw new Error(`Gas estimation failed: ${error.message}`);
+      throw createTransactionError(
+        ErrorCodes.TRANSACTION_FAILED,
+        `Gas estimation failed: ${error.message}`,
+        { transaction: { ...transaction, from: txToEstimate.from } }
+      );
     }
   }
 }

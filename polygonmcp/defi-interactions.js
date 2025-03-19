@@ -5,8 +5,25 @@ const {
   Contract, 
   parseUnits,
   formatUnits,
-  MaxUint256
+  MaxUint256,
+  isAddress
 } = require('ethers');
+const { ErrorCodes, createWalletError, createDeFiError } = require('./errors');
+
+// Default configuration for DeFi operations
+const DEFAULT_CONFIG = {
+  // Default slippage percentage (0.5%)
+  defaultSlippage: 0.5,
+  // Default deadline in minutes (20 min)
+  defaultDeadlineMinutes: 20,
+  // Default gas settings
+  gasLimits: {
+    approval: 100000,
+    swap: 250000,
+    addLiquidity: 300000,
+    removeLiquidity: 250000
+  }
+};
 
 // QuickSwap Router ABI (simplified)
 const QUICKSWAP_ROUTER_ABI = [
@@ -85,6 +102,14 @@ class DeFiProtocols {
     this.tokenAddresses = config.tokenAddresses;
     this.polymarketFactory = config.polymarketFactory;
     
+    // Set default configuration values
+    this.defaultSlippage = config.defaultSlippage || DEFAULT_CONFIG.defaultSlippage;
+    this.deadlineMinutes = config.deadlineMinutes || DEFAULT_CONFIG.defaultDeadlineMinutes;
+    this.gasLimits = {
+      ...DEFAULT_CONFIG.gasLimits,
+      ...(config.gasLimits || {})
+    };
+    
     // Initialize provider
     this.provider = new JsonRpcProvider(this.rpcUrl);
     
@@ -127,6 +152,14 @@ class DeFiProtocols {
   
   // Connect wallet for operations
   connectWallet(privateKey) {
+    if (!privateKey) {
+      throw createWalletError(
+        ErrorCodes.WALLET_NOT_CONNECTED,
+        "Private key is required to connect wallet",
+        { context: "DeFiProtocols.connectWallet" }
+      );
+    }
+    
     this.wallet = new Wallet(privateKey, this.provider);
     
     // Update QuickSwap router contract with signer
@@ -145,18 +178,42 @@ class DeFiProtocols {
     }
   }
   
+  // Check if wallet is connected
+  checkWalletConnected() {
+    if (!this.wallet) {
+      throw createWalletError(
+        ErrorCodes.WALLET_NOT_CONNECTED,
+        "Wallet not connected",
+        { context: "DeFiProtocols" }
+      );
+    }
+    return true;
+  }
+  
   // Helper to resolve token address from symbol or address
   resolveTokenAddress(token) {
-    if (typeof token === 'string' && token.match(/^0x[a-fA-F0-9]{40}$/)) {
+    if (isAddress(token)) {
       return token;
     }
     
+    if (!token || typeof token !== 'string') {
+      throw createDeFiError(
+        ErrorCodes.INVALID_PARAMETERS,
+        "Token symbol or address is required",
+        { token }
+      );
+    }
+    
     const upperToken = token.toUpperCase();
-    if (this.tokenAddresses[upperToken]) {
+    if (this.tokenAddresses && this.tokenAddresses[upperToken]) {
       return this.tokenAddresses[upperToken];
     }
     
-    throw new Error(`Unknown token: ${token}`);
+    throw createDeFiError(
+      ErrorCodes.INVALID_ADDRESS,
+      `Unknown token: ${token}`,
+      { token }
+    );
   }
   
   // Helper to get token contract
@@ -171,7 +228,11 @@ class DeFiProtocols {
   // Get Uniswap V3 quote for single hop
   async getUniswapV3QuoteSingle(fromToken, toToken, amount, fee = 3000) {
     if (!this.uniswapRouterContract) {
-      throw new Error("Uniswap router not configured");
+      throw createDeFiError(
+        ErrorCodes.CONTRACT_ERROR,
+        "Uniswap router not configured",
+        { context: "getUniswapV3QuoteSingle" }
+      );
     }
     
     try {
@@ -219,7 +280,15 @@ class DeFiProtocols {
         fee
       };
     } catch (error) {
-      throw new Error(`Failed to get Uniswap quote: ${error.message}`);
+      if (error.code && error.name) {
+        throw error; // Re-throw custom errors
+      }
+      
+      throw createDeFiError(
+        ErrorCodes.DEFI_ERROR,
+        `Failed to get Uniswap quote: ${error.message}`,
+        { fromToken, toToken, amount, fee }
+      );
     }
   }
 
