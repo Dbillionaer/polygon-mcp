@@ -22,17 +22,18 @@
   "author": "",
   "license": "MIT",
   "dependencies": {
-    "@maticnetwork/maticjs": "^2.0.0",
-    "@maticnetwork/maticjs-web3": "^1.0.0",
-    "@modelcontextprotocol/sdk": "^0.1.0",
+    "@maticnetwork/maticjs": "^3.6.0",
+    "@maticnetwork/maticjs-web3": "^1.0.4",
+    "@modelcontextprotocol/sdk": "^1.7.0",
     "axios": "^1.6.0",
     "dotenv": "^16.0.3",
-    "ethers": "^6.13.5"
+    "ethers": "^6.13.5",
+    "zod": "^3.22.4"
   },
   "devDependencies": {
     "eslint": "^8.38.0",
     "jest": "^29.5.0",
-    "nodemon": "^2.0.22"
+    "nodemon": "^3.0.3"
   },
   "engines": {
     "node": ">=14.0.0"

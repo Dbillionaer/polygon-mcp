@@ -9,6 +9,8 @@ const {
   isAddress
 } = require('ethers');
 const { MaticPOSClient } = require('@maticnetwork/maticjs');
+const { McpServer } = require('@modelcontextprotocol/sdk/server/mcp.js');
+const { StdioServerTransport } = require('@modelcontextprotocol/sdk/server/stdio.js');
 const { TransactionSimulator } = require('./transaction-simulation');
 const { ContractTemplates } = require('./contract-templates');
 const { ErrorCodes, createWalletError, createTransactionError } = require('./errors');
@@ -47,6 +49,12 @@ class PolygonMCPServer {
     this.explorerApiKey = config.explorerApiKey;
     this.tokenAddresses = config.tokenAddresses;
     
+    // Initialize MCP Server
+    this.mcpServer = new McpServer({
+      name: "polygon-mcp-server",
+      version: "1.0.0"
+    });
+    
     // Initialize providers
     this.provider = new JsonRpcProvider(this.rpcUrl);
     this.parentProvider = new JsonRpcProvider(config.parentRpcUrl);
@@ -74,6 +82,69 @@ class PolygonMCPServer {
       rpcUrl: this.rpcUrl,
       explorerApiKey: this.explorerApiKey
     });
+
+    // Register MCP tools
+    this.registerMCPTools();
+  }
+
+  // Register MCP tools
+  registerMCPTools() {
+    // Register bridge operations as tools
+    this.mcpServer.tool(
+      "deposit-eth",
+      {
+        amount: z.string().describe("Amount of ETH to deposit")
+      },
+      async ({ amount }) => {
+        const result = await this.depositETH(amount);
+        return {
+          content: [{
+            type: "text",
+            text: JSON.stringify(result)
+          }]
+        };
+      }
+    );
+
+    this.mcpServer.tool(
+      "withdraw-eth",
+      {
+        amount: z.string().describe("Amount of ETH to withdraw")
+      },
+      async ({ amount }) => {
+        const result = await this.withdrawETH(amount);
+        return {
+          content: [{
+            type: "text",
+            text: JSON.stringify(result)
+          }]
+        };
+      }
+    );
+
+    // Register token operations as tools
+    this.mcpServer.tool(
+      "get-token-balance",
+      {
+        token: z.string().describe("Token symbol or address"),
+        address: z.string().describe("Address to check balance for")
+      },
+      async ({ token, address }) => {
+        const balance = await this.getTokenBalance(token, address);
+        return {
+          content: [{
+            type: "text",
+            text: JSON.stringify(balance)
+          }]
+        };
+      }
+    );
+  }
+
+  // Start MCP server
+  async start() {
+    const transport = new StdioServerTransport();
+    await this.mcpServer.connect(transport);
   }
   
   // Connect wallet for operations
