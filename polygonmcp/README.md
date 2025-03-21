@@ -7,7 +7,7 @@ A Model Context Protocol (MCP) server for interacting with the Polygon blockchai
 ### Wallet Tools
 - `get-address`: Retrieve the current wallet address
 - `get-testnet-matic`: Request testnet POL from a faucet (Mumbai testnet only)
-- `list-balances`: List token balances for the connected wallet
+- `list-balances`: List token balances for the connected wallet, including POL
 - `transfer-funds`: Transfer POL or ERC20 tokens to another address
 - Enhanced wallet connection validation
 - Improved error handling with detailed messages
@@ -150,13 +150,15 @@ For Cursor/Claude Dev:
 ## Technical Details
 
 ### Dependencies
+- @modelcontextprotocol/sdk v1.7.0 for MCP protocol interactions
+- @maticnetwork/maticjs v3.6.0 for Polygon chain interactions
 - ethers v6.13.5 for Ethereum interactions
-- @maticnetwork/maticjs v2.0.0 for Polygon bridge operations
-- @maticnetwork/maticjs-web3 v1.0.0 for Web3 compatibility
+- zod for runtime type validation
 - axios for HTTP requests
 - Additional utility packages for enhanced functionality
 
 ### Key Features
+- Full support for POL (Polygon's native token)
 - Full support for EIP-1559 gas fee mechanism
 - BigInt support for large numbers
 - Robust input validation
