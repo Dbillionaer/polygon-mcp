@@ -14,6 +14,7 @@ const { StdioServerTransport } = require('@modelcontextprotocol/sdk/server/stdio
 const { TransactionSimulator } = require('./transaction-simulation');
 const { ContractTemplates } = require('./contract-templates');
 const { ErrorCodes, createWalletError, createTransactionError } = require('./errors');
+const { z } = require('zod');
 
 // Standard ERC20 ABI
 const ERC20_ABI = [
@@ -43,11 +44,20 @@ const ERC1155_ABI = [
   "function isApprovedForAll(address account, address operator) view returns (bool)"
 ];
 
+// Standard token addresses for Polygon network
+const DEFAULT_TOKEN_ADDRESSES = {
+  'WMATIC': '0x0d500B1d8E8eF31E21C99d1Db9A6444d3ADf1270',
+  'WETH': '0x7ceB23fD6bC0adD59E62ac25578270cFf1b9f619',
+  'USDC': '0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174',
+  'USDT': '0xc2132D05D31c914a87C6611C10748AEb04B58e8F',
+  'DAI': '0x8f3Cf7ad23Cd3CaDbD9735AFf958023239c6A063'
+};
+
 class PolygonMCPServer {
   constructor(config) {
     this.rpcUrl = config.rpcUrl;
     this.explorerApiKey = config.explorerApiKey;
-    this.tokenAddresses = config.tokenAddresses;
+    this.tokenAddresses = config.tokenAddresses || DEFAULT_TOKEN_ADDRESSES;
     
     // Initialize MCP Server
     this.mcpServer = new McpServer({

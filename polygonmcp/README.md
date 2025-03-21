@@ -152,13 +152,19 @@ For Cursor/Claude Dev:
 ### Dependencies
 - @modelcontextprotocol/sdk v1.7.0 for MCP protocol interactions
 - @maticnetwork/maticjs v3.6.0 for Polygon chain interactions
-- ethers v6.13.5 for Ethereum interactions
 - zod for runtime type validation
+- ethers v6.13.5 for Ethereum interactions
 - axios for HTTP requests
 - Additional utility packages for enhanced functionality
 
 ### Key Features
 - Full support for POL (Polygon's native token)
+- Standard token support for:
+  - WMATIC: 0x0d500B1d8E8eF31E21C99d1Db9A6444d3ADf1270
+  - WETH: 0x7ceB23fD6bC0adD59E62ac25578270cFf1b9f619
+  - USDC: 0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174
+  - USDT: 0xc2132D05D31c914a87C6611C10748AEb04B58e8F
+  - DAI: 0x8f3Cf7ad23Cd3CaDbD9735AFf958023239c6A063
 - Full support for EIP-1559 gas fee mechanism
 - BigInt support for large numbers
 - Robust input validation
