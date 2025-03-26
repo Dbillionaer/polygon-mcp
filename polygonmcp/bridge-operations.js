@@ -1,6 +1,7 @@
 // bridge-operations.js - Polygon Bridge Operations using @maticnetwork/maticjs
 const { MaticPOSClient } = require('@maticnetwork/maticjs');
 const { JsonRpcProvider, Wallet, parseEther, formatEther, parseUnits } = require('ethers');
+const { ErrorCodes, createWalletError, createTransactionError } = require('./errors');
 
 class PolygonBridge {
   constructor(config) {
@@ -20,24 +21,43 @@ class PolygonBridge {
       maticProvider: this.childProvider,
       parentProvider: this.rootProvider,
       posRootChainManager: this.posRootChainManager,
-      parentDefaultOptions: { confirmations: 2 },
-      maticDefaultOptions: { confirmations: 2 }
+      parentDefaultOptions: { confirmations: 2, from: config.rootChainAddress },
+      maticDefaultOptions: { confirmations: 2, from: config.childChainAddress }
     });
   }
   
   // Connect wallet for operations
   connectWallet(privateKey) {
+    if (!privateKey) {
+      throw createWalletError(
+        ErrorCodes.WALLET_NOT_CONNECTED,
+        "Private key is required to connect wallet",
+        { context: "PolygonBridge.connectWallet" }
+      );
+    }
     this.rootWallet = new Wallet(privateKey, this.rootProvider);
     this.childWallet = new Wallet(privateKey, this.childProvider);
     
-    // Update MaticPOSClient with signers
-    this.maticPOSClient.setWallet(this.rootWallet, this.childWallet);
+    // Recreate MaticPOSClient with wallet addresses
+    this.maticPOSClient = new MaticPOSClient({
+      network: 'mainnet',
+      version: 'v1',
+      maticProvider: this.childProvider,
+      parentProvider: this.rootProvider,
+      posRootChainManager: this.posRootChainManager,
+      parentDefaultOptions: { confirmations: 2, from: this.rootWallet.address },
+      maticDefaultOptions: { confirmations: 2, from: this.childWallet.address }
+    });
   }
   
   // Deposit ETH to Polygon
   async depositETH(amount) {
     if (!this.rootWallet) {
-      throw new Error("Wallet not connected");
+      throw createWalletError(
+        ErrorCodes.WALLET_NOT_CONNECTED,
+        "Wallet not connected",
+        { context: "PolygonBridge.depositETH" }
+      );
     }
     
     try {
@@ -61,14 +81,22 @@ class PolygonBridge {
         status: "Deposit initiated"
       };
     } catch (error) {
-      throw new Error(`ETH deposit failed: ${error.message}`);
+      throw createTransactionError(
+        ErrorCodes.BRIDGE_ERROR,
+        `ETH deposit failed: ${error.message}`,
+        { amount }
+      );
     }
   }
   
   // Deposit ERC20 to Polygon
   async depositERC20(tokenAddress, amount) {
     if (!this.rootWallet) {
-      throw new Error("Wallet not connected");
+      throw createWalletError(
+        ErrorCodes.WALLET_NOT_CONNECTED,
+        "Wallet not connected",
+        { context: "PolygonBridge.depositERC20" }
+      );
     }
     
     try {
@@ -102,14 +130,22 @@ class PolygonBridge {
         status: "Deposit initiated"
       };
     } catch (error) {
-      throw new Error(`ERC20 deposit failed: ${error.message}`);
+      throw createTransactionError(
+        ErrorCodes.BRIDGE_ERROR,
+        `ERC20 deposit failed: ${error.message}`,
+        { tokenAddress, amount }
+      );
     }
   }
   
   // Withdraw POL (formerly MATIC) from Polygon to Ethereum
   async withdrawPOL(amount) {
     if (!this.childWallet) {
-      throw new Error("Wallet not connected");
+      throw createWalletError(
+        ErrorCodes.WALLET_NOT_CONNECTED,
+        "Wallet not connected",
+        { context: "PolygonBridge.withdrawPOL" }
+      );
     }
     
     try {
@@ -133,7 +169,11 @@ class PolygonBridge {
         status: "Withdrawal initiated, waiting for checkpoint"
       };
     } catch (error) {
-      throw new Error(`POL withdrawal failed: ${error.message}`);
+      throw createTransactionError(
+        ErrorCodes.BRIDGE_ERROR,
+        `POL withdrawal failed: ${error.message}`,
+        { amount }
+      );
     }
   }
   
@@ -145,7 +185,11 @@ class PolygonBridge {
   // Withdraw ERC20 from Polygon to Ethereum
   async withdrawERC20(tokenAddress, amount) {
     if (!this.childWallet) {
-      throw new Error("Wallet not connected");
+      throw createWalletError(
+        ErrorCodes.WALLET_NOT_CONNECTED,
+        "Wallet not connected",
+        { context: "PolygonBridge.withdrawERC20" }
+      );
     }
     
     try {
@@ -178,7 +222,11 @@ class PolygonBridge {
         status: "Withdrawal initiated, waiting for checkpoint"
       };
     } catch (error) {
-      throw new Error(`ERC20 withdrawal failed: ${error.message}`);
+      throw createTransactionError(
+        ErrorCodes.BRIDGE_ERROR,
+        `ERC20 withdrawal failed: ${error.message}`,
+        { tokenAddress, amount }
+      );
     }
   }
   
@@ -198,7 +246,11 @@ class PolygonBridge {
         exitTransactionHash: status.exitTransactionHash
       };
     } catch (error) {
-      throw new Error(`Failed to track transaction: ${error.message}`);
+      throw createTransactionError(
+        ErrorCodes.BRIDGE_ERROR,
+        `Failed to track transaction: ${error.message}`,
+        { txHash, network }
+      );
     }
   }
   
@@ -207,7 +259,11 @@ class PolygonBridge {
     try {
       return await this.maticPOSClient.getTransactionStatus(txHash);
     } catch (error) {
-      throw new Error(`Failed to get transaction status: ${error.message}`);
+      throw createTransactionError(
+        ErrorCodes.BRIDGE_ERROR,
+        `Failed to get transaction status: ${error.message}`,
+        { txHash }
+      );
     }
   }
   
@@ -216,7 +272,11 @@ class PolygonBridge {
     try {
       return await this.maticPOSClient.getCheckpointStatus(txHash);
     } catch (error) {
-      throw new Error(`Failed to get checkpoint status: ${error.message}`);
+      throw createTransactionError(
+        ErrorCodes.BRIDGE_ERROR,
+        `Failed to get checkpoint status: ${error.message}`,
+        { txHash }
+      );
     }
   }
   
@@ -225,7 +285,11 @@ class PolygonBridge {
     try {
       return await this.maticPOSClient.getExitTransactionHash(txHash);
     } catch (error) {
-      throw new Error(`Failed to get exit transaction hash: ${error.message}`);
+      throw createTransactionError(
+        ErrorCodes.BRIDGE_ERROR,
+        `Failed to get exit transaction hash: ${error.message}`,
+        { txHash }
+      );
     }
   }
 }
