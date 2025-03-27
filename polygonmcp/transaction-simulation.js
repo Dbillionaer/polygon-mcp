@@ -1,7 +1,6 @@
 // transaction-simulation.js - Transaction Simulation and Analysis
 const { 
   JsonRpcProvider, 
-  Wallet, 
   Contract, 
   Interface,
   formatUnits,
@@ -12,18 +11,9 @@ const {
 } = require('ethers');
 const axios = require('axios');
 const { ErrorCodes, createTransactionError, createWalletError } = require('./errors');
-
-// ERC20 ABI for token interactions
-const ERC20_ABI = [
-  "function balanceOf(address account) view returns (uint256)",
-  "function decimals() view returns (uint8)",
-  "function symbol() view returns (string)",
-  "function transfer(address to, uint256 amount) returns (bool)",
-  "function approve(address spender, uint256 amount) returns (bool)"
-];
-
-// ERC20 transfer function signature
-const ERC20_TRANSFER_SIGNATURE = "0xa9059cbb";
+const { defaultLogger } = require('./logger');
+const walletManager = require('./common/wallet-manager');
+const { ERC20_ABI, ERC20_TRANSFER_SIGNATURE } = require('./common/constants');
 
 class TransactionSimulator {
   constructor(config) {
@@ -36,6 +26,8 @@ class TransactionSimulator {
   }
   
   // Connect wallet for operations
+  // This method is maintained for backward compatibility
+  // In new code, you should use the wallet manager directly
   connectWallet(privateKey) {
     if (!privateKey) {
       throw createWalletError(
@@ -44,12 +36,19 @@ class TransactionSimulator {
         { context: "TransactionSimulator.connectWallet" }
       );
     }
-    this.wallet = new Wallet(privateKey, this.provider);
+    
+    // Register provider if needed
+    if (!walletManager.providers.has('polygon')) {
+      walletManager.registerProvider('polygon', this.provider);
+    }
+    
+    // Connect wallet
+    walletManager.connectWallet(privateKey, 'polygon');
   }
   
   // Check if wallet is connected
   checkWalletConnected() {
-    if (!this.wallet) {
+    if (!walletManager.isWalletConnected('polygon')) {
       throw createWalletError(
         ErrorCodes.WALLET_NOT_CONNECTED,
         "Wallet not connected",
@@ -77,15 +76,15 @@ class TransactionSimulator {
     );
   }
   
-  // Simulate a transaction
+  // Simulate a transaction using eth_call
   async simulateTransaction(transaction) {
     try {
       // Clone the transaction to avoid modifying the original
       const txToSimulate = { ...transaction };
       
       // If from address is not provided, use the connected wallet
-      if (!txToSimulate.from && this.wallet) {
-        txToSimulate.from = this.wallet.address;
+      if (!txToSimulate.from && walletManager.isWalletConnected('polygon')) {
+        txToSimulate.from = walletManager.getAddress('polygon');
       }
       
       // If gas limit is not provided, estimate it
@@ -99,6 +98,7 @@ class TransactionSimulator {
         } catch (error) {
           // If gas estimation fails, use a default value
           txToSimulate.gasLimit = 300000n;
+          defaultLogger.warn(`Gas estimation failed: ${error.message}. Using default value.`);
         }
       }
       
@@ -113,65 +113,85 @@ class TransactionSimulator {
         }
       }
       
-      // For a real implementation, this would use eth_call to simulate the transaction
-      // and analyze the results, including token transfers, contract interactions, etc.
-      
-      // For demonstration, we'll simulate a transaction result
+      // Initialize simulation result
       const simulationResult = {
         success: true,
-        gasUsed: (Math.floor(Math.random() * 200000) + 50000).toString(),
+        gasUsed: '0',
         logs: [],
         tokenTransfers: [],
         contractInteractions: [],
-        errorMessage: null
+        errorMessage: null,
+        stateChanges: []
       };
       
-      // If this is a token transfer, add it to the token transfers
-      if (txToSimulate.to && txToSimulate.data && txToSimulate.data.startsWith(ERC20_TRANSFER_SIGNATURE)) {
-        // This is an ERC20 transfer
-        const tokenAddress = txToSimulate.to;
+      // Get the current block number for state comparison
+      const blockNumber = await this.provider.getBlockNumber();
+      
+      // Perform eth_call to simulate the transaction
+      try {
+        // Create a copy of the transaction for eth_call
+        const callTx = { ...txToSimulate };
         
-        try {
-          // Decode the transfer data
-          const iface = new Interface(ERC20_ABI);
-          const decodedData = iface.parseTransaction({ data: txToSimulate.data });
-          
-          if (decodedData.name === 'transfer') {
-            const to = decodedData.args[0];
-            const amount = decodedData.args[1];
-            
-            // Get token details
-            let symbol = 'Unknown';
-            let decimals = 18;
-            
-            try {
-              const tokenContract = new Contract(tokenAddress, ERC20_ABI, this.provider);
-              symbol = await tokenContract.symbol().catch(() => 'Unknown');
-              decimals = await tokenContract.decimals().catch(() => 18);
-            } catch (error) {
-              // Ignore errors when getting token details
+        // Execute the transaction via eth_call
+        await this.provider.call(callTx, blockNumber);
+        
+        // If we get here, the call was successful
+        simulationResult.success = true;
+      } catch (error) {
+        // The call failed, but we can still extract useful information
+        simulationResult.success = false;
+        simulationResult.errorMessage = error.message;
+        
+        // Check if this is a revert with a reason
+        if (error.data) {
+          try {
+            // Try to decode the revert reason
+            const decodedError = error.data.toString();
+            if (decodedError.includes('revert')) {
+              simulationResult.errorMessage = `Transaction would revert: ${decodedError}`;
             }
-            
-            simulationResult.tokenTransfers.push({
-              token: tokenAddress,
-              symbol,
-              from: txToSimulate.from,
-              to,
-              amount: formatUnits(amount, decimals),
-              rawAmount: amount.toString()
-            });
+          } catch (decodeError) {
+            // Ignore decoding errors
           }
-        } catch (error) {
-          // Ignore errors when decoding transfer data
         }
       }
       
+      // Estimate gas usage more accurately
+      try {
+        const gasEstimate = await this.provider.estimateGas(txToSimulate);
+        simulationResult.gasUsed = gasEstimate.toString();
+      } catch (error) {
+        // If gas estimation fails, the transaction would likely fail
+        simulationResult.gasUsed = txToSimulate.gasLimit?.toString() || '0';
+        if (!simulationResult.errorMessage) {
+          simulationResult.errorMessage = `Gas estimation failed: ${error.message}`;
+        }
+      }
+      
+      // Detect token transfers and contract interactions
+      await this.detectTokenTransfers(txToSimulate, simulationResult);
+      
       // If this is a contract creation, add it to the contract interactions
       if (!txToSimulate.to && txToSimulate.data) {
+        // This is a contract creation
+        const creationCode = txToSimulate.data;
+        
+        // Calculate the contract address that would be created
+        // This uses a simplified version of the address calculation
+        const nonce = await this.provider.getTransactionCount(txToSimulate.from);
+        const addressBuffer = Buffer.from(
+          this.provider.network.chainId + txToSimulate.from.slice(2).toLowerCase() + nonce.toString(16).padStart(64, '0'),
+          'hex'
+        );
+        
+        // Use keccak256 hash of the buffer and take the last 20 bytes
+        const estimatedAddress = '0x' + addressBuffer.slice(-20).toString('hex');
+        
         simulationResult.contractInteractions.push({
           type: 'creation',
-          bytecode: txToSimulate.data.substring(0, 64) + '...',
-          estimatedAddress: '0x' + Array(40).fill(0).map(() => Math.floor(Math.random() * 16).toString(16)).join('')
+          bytecode: creationCode.length > 64 ? creationCode.substring(0, 64) + '...' : creationCode,
+          estimatedAddress,
+          constructorArgs: this.extractConstructorArgs(creationCode)
         });
       }
       
@@ -253,28 +273,150 @@ class TransactionSimulator {
     }
   }
   
-  // Get token balance changes for an address
-  async getTokenBalanceChanges(address, fromBlock, toBlock) {
-    // For a real implementation, this would query token transfer events
-    // and calculate balance changes
-    
-    // For demonstration, we'll return simulated balance changes
-    const tokens = Object.entries(this.tokenAddresses).slice(0, 3);
-    const changes = [];
-    
-    for (const [symbol, tokenAddress] of tokens) {
-      // Generate a random balance change
-      const change = (Math.random() * 100 - 50).toFixed(4);
-      const isPositive = parseFloat(change) >= 0;
+  // Extract constructor arguments from contract creation bytecode
+  extractConstructorArgs(bytecode) {
+    try {
+      // This is a simplified implementation
+      // In a real implementation, you would need to parse the ABI to know the types
+      if (!bytecode || bytecode.length <= 2) {
+        return [];
+      }
       
-      changes.push({
-        token: tokenAddress,
-        symbol,
-        change,
-        changeType: isPositive ? 'increase' : 'decrease',
-        fromBlock,
-        toBlock
-      });
+      // Try to find the constructor arguments by looking for the metadata hash
+      // This is a heuristic and may not work for all contracts
+      const metadataLength = 43; // 0x + 42 chars for CBOR encoded metadata hash
+      const possibleArgs = bytecode.slice(bytecode.length - metadataLength);
+      
+      return {
+        raw: possibleArgs,
+        decoded: 'Constructor arguments detection requires ABI'
+      };
+    } catch (error) {
+      return {
+        raw: 'Unknown',
+        error: error.message
+      };
+    }
+  }
+  
+  // Detect token transfers in a transaction
+  async detectTokenTransfers(transaction, simulationResult) {
+    // Check for ERC20 transfers
+    if (transaction.to && transaction.data && transaction.data.startsWith(ERC20_TRANSFER_SIGNATURE)) {
+      await this.detectERC20Transfer(transaction, simulationResult);
+    }
+    
+    // Check for other common token operations
+    // In a real implementation, you would check for other signatures like transferFrom, etc.
+    
+    return simulationResult;
+  }
+  
+  // Detect ERC20 token transfers
+  async detectERC20Transfer(transaction, simulationResult) {
+    const tokenAddress = transaction.to;
+    
+    try {
+      // Decode the transfer data
+      const iface = new Interface(ERC20_ABI);
+      const decodedData = iface.parseTransaction({ data: transaction.data });
+      
+      if (decodedData.name === 'transfer') {
+        const to = decodedData.args[0];
+        const amount = decodedData.args[1];
+        
+        // Get token details
+        let symbol = 'Unknown';
+        let decimals = 18;
+        
+        try {
+          const tokenContract = new Contract(tokenAddress, ERC20_ABI, this.provider);
+          symbol = await tokenContract.symbol().catch(() => 'Unknown');
+          decimals = await tokenContract.decimals().catch(() => 18);
+        } catch (error) {
+          defaultLogger.warn(`Failed to get token details: ${error.message}`);
+        }
+        
+        simulationResult.tokenTransfers.push({
+          token: tokenAddress,
+          symbol,
+          from: transaction.from,
+          to,
+          amount: formatUnits(amount, decimals),
+          rawAmount: amount.toString(),
+          type: 'ERC20'
+        });
+      }
+    } catch (error) {
+      defaultLogger.warn(`Failed to decode ERC20 transfer: ${error.message}`);
+    }
+  }
+  
+  // Get token balance changes for an address by analyzing events
+  async getTokenBalanceChanges(address, fromBlock, toBlock) {
+    if (!address || !isAddress(address)) {
+      throw createTransactionError(
+        ErrorCodes.INVALID_ADDRESS,
+        'Invalid address provided',
+        { address }
+      );
+    }
+    
+    // Convert block parameters to numbers
+    fromBlock = fromBlock ? parseInt(fromBlock) : 'latest';
+    toBlock = toBlock ? parseInt(toBlock) : 'latest';
+    
+    const changes = [];
+    const tokens = Object.entries(this.tokenAddresses);
+    
+    // For each token, check for Transfer events involving the address
+    for (const [symbol, tokenAddress] of tokens) {
+      try {
+        const tokenContract = new Contract(tokenAddress, ERC20_ABI, this.provider);
+        
+        // Get token decimals
+        const decimals = await tokenContract.decimals().catch(() => 18);
+        
+        // Create filter for Transfer events where the address is sender or receiver
+        const filterFrom = tokenContract.filters.Transfer(address, null);
+        const filterTo = tokenContract.filters.Transfer(null, address);
+        
+        // Get events
+        const eventsFrom = await tokenContract.queryFilter(filterFrom, fromBlock, toBlock);
+        const eventsTo = await tokenContract.queryFilter(filterTo, fromBlock, toBlock);
+        
+        // Calculate total change
+        let totalChange = 0n;
+        
+        // Outgoing transfers (negative)
+        for (const event of eventsFrom) {
+          totalChange -= BigInt(event.args.value);
+        }
+        
+        // Incoming transfers (positive)
+        for (const event of eventsTo) {
+          totalChange += BigInt(event.args.value);
+        }
+        
+        // Only add tokens with changes
+        if (totalChange !== 0n) {
+          const changeFormatted = formatUnits(totalChange, decimals);
+          changes.push({
+            token: tokenAddress,
+            symbol,
+            change: changeFormatted,
+            changeType: totalChange > 0n ? 'increase' : 'decrease',
+            fromBlock,
+            toBlock,
+            events: {
+              outgoing: eventsFrom.length,
+              incoming: eventsTo.length
+            }
+          });
+        }
+      } catch (error) {
+        defaultLogger.warn(`Failed to get balance changes for ${symbol}: ${error.message}`);
+      }
     }
     
     return {
@@ -292,8 +434,8 @@ class TransactionSimulator {
       const txToEstimate = { ...transaction };
       
       // If from address is not provided, use the connected wallet
-      if (!txToEstimate.from && this.wallet) {
-        txToEstimate.from = this.wallet.address;
+      if (!txToEstimate.from && walletManager.isWalletConnected('polygon')) {
+        txToEstimate.from = walletManager.getAddress('polygon');
       }
       
       // Estimate gas

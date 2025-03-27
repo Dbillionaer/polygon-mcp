@@ -1,14 +1,18 @@
 // contract-templates.js - Smart Contract Templates and Deployment
+const ethers = require('ethers');
 const { 
   JsonRpcProvider, 
-  Wallet, 
   Contract, 
   Interface,
   formatUnits,
   parseUnits,
-  isAddress
-} = require('ethers');
+  isAddress,
+  ContractFactory
+} = ethers;
 const axios = require('axios');
+const { ErrorCodes, createTransactionError, createWalletError } = require('./errors');
+const { defaultLogger } = require('./logger');
+const walletManager = require('./common/wallet-manager');
 
 // Basic ERC20 template
 const ERC20_TEMPLATE = `
@@ -373,8 +377,28 @@ class ContractTemplates {
   }
   
   // Connect wallet for operations
+  // This method is maintained for backward compatibility
+  // In new code, you should use the wallet manager directly
   connectWallet(privateKey) {
-    this.wallet = new Wallet(privateKey, this.provider);
+    // Register provider if needed
+    if (!walletManager.providers.has('polygon')) {
+      walletManager.registerProvider('polygon', this.provider);
+    }
+    
+    // Connect wallet
+    walletManager.connectWallet(privateKey, 'polygon');
+  }
+  
+  // Check if wallet is connected
+  checkWalletConnected() {
+    if (!walletManager.isWalletConnected('polygon')) {
+      throw createWalletError(
+        ErrorCodes.WALLET_NOT_CONNECTED,
+        'Wallet not connected',
+        { context: 'ContractTemplates' }
+      );
+    }
+    return true;
   }
   
   // List available templates
@@ -430,71 +454,267 @@ class ContractTemplates {
     };
   }
   
-  // Deploy contract from template
-  async deployFromTemplate(templateId, parameters, constructorArgs) {
-    if (!this.wallet) {
-      throw new Error("Wallet not connected");
-    }
-    
+  // Compile a Solidity contract
+  async compileContract(source, contractName) {
     try {
-      const contract = this.prepareContract(templateId, parameters);
+      // Import solc dynamically
+      const solc = require('solc');
       
-      // For a real implementation, this would compile the contract
-      // and deploy it using the compiled bytecode and ABI
-      
-      // For demonstration, we'll simulate a deployment
-      const deploymentResult = {
-        address: "0x" + Array(40).fill(0).map(() => Math.floor(Math.random() * 16).toString(16)).join(''),
-        transactionHash: "0x" + Array(64).fill(0).map(() => Math.floor(Math.random() * 16).toString(16)).join(''),
-        contractName: contract.name
+      // Prepare input for the compiler
+      const input = {
+        language: 'Solidity',
+        sources: {
+          'contract.sol': {
+            content: source
+          }
+        },
+        settings: {
+          outputSelection: {
+            '*': {
+              '*': ['abi', 'evm.bytecode', 'evm.deployedBytecode', 'metadata']
+            }
+          },
+          optimizer: {
+            enabled: true,
+            runs: 200
+          }
+        }
       };
       
-      return deploymentResult;
+      // Compile the contract
+      const output = JSON.parse(solc.compile(JSON.stringify(input)));
+      
+      // Check for errors
+      if (output.errors) {
+        const errors = output.errors.filter(error => error.severity === 'error');
+        if (errors.length > 0) {
+          throw new Error(`Compilation errors: ${errors.map(e => e.message).join(', ')}`);
+        }
+        
+        // Log warnings
+        const warnings = output.errors.filter(error => error.severity === 'warning');
+        for (const warning of warnings) {
+          defaultLogger.warn(`Compilation warning: ${warning.message}`);
+        }
+      }
+      
+      // Get the contract
+      const contractOutput = output.contracts['contract.sol'][contractName];
+      if (!contractOutput) {
+        throw new Error(`Contract ${contractName} not found in compiled output`);
+      }
+      
+      return {
+        abi: contractOutput.abi,
+        bytecode: contractOutput.evm.bytecode.object,
+        deployedBytecode: contractOutput.evm.deployedBytecode.object,
+        metadata: contractOutput.metadata
+      };
     } catch (error) {
-      throw new Error(`Deployment failed: ${error.message}`);
+      throw createTransactionError(
+        ErrorCodes.CONTRACT_ERROR,
+        `Compilation failed: ${error.message}`,
+        { contractName }
+      );
+    }
+  }
+  
+  // Deploy contract from template
+  async deployFromTemplate(templateId, parameters, constructorArgs = []) {
+    this.checkWalletConnected();
+    
+    try {
+      // Prepare the contract from template
+      const contract = this.prepareContract(templateId, parameters);
+      
+      // Compile the contract
+      const compiledContract = await this.compileContract(contract.code, contract.name);
+      
+      // Deploy the contract
+      return await this.deployCompiledContract(
+        contract.name,
+        compiledContract.abi,
+        compiledContract.bytecode,
+        constructorArgs
+      );
+    } catch (error) {
+      if (error.code && error.name) {
+        throw error; // Re-throw our custom errors
+      }
+      throw createTransactionError(
+        ErrorCodes.CONTRACT_ERROR,
+        `Deployment failed: ${error.message}`,
+        { templateId, parameters }
+      );
+    }
+  }
+  
+  // Deploy a compiled contract
+  async deployCompiledContract(contractName, abi, bytecode, constructorArgs = []) {
+    this.checkWalletConnected();
+    
+    try {
+      // Get the wallet
+      const wallet = walletManager.getWallet('polygon');
+      
+      // Create a contract factory
+      const factory = new ethers.ContractFactory(abi, '0x' + bytecode, wallet);
+      
+      // Deploy the contract
+      const deployTransaction = await factory.getDeployTransaction(...constructorArgs);
+      
+      // Estimate gas
+      const gasEstimate = await this.provider.estimateGas({
+        from: wallet.address,
+        data: deployTransaction.data
+      });
+      
+      // Add 20% buffer to gas estimate
+      const gasLimit = BigInt(gasEstimate) * 120n / 100n;
+      
+      // Deploy with gas limit
+      const tx = await wallet.sendTransaction({
+        data: deployTransaction.data,
+        gasLimit
+      });
+      
+      // Wait for transaction to be mined
+      const receipt = await tx.wait();
+      
+      // Get the contract address from the receipt
+      const contractAddress = receipt.contractAddress;
+      
+      return {
+        address: contractAddress,
+        transactionHash: receipt.hash,
+        contractName,
+        abi,
+        constructorArgs,
+        gasUsed: receipt.gasUsed.toString()
+      };
+    } catch (error) {
+      throw createTransactionError(
+        ErrorCodes.CONTRACT_ERROR,
+        `Contract deployment failed: ${error.message}`,
+        { contractName }
+      );
     }
   }
   
   // Deploy custom contract
-  async deployContract(contractName, contractCode, constructorArgs) {
-    if (!this.wallet) {
-      throw new Error("Wallet not connected");
-    }
+  async deployContract(contractName, contractCode, constructorArgs = []) {
+    this.checkWalletConnected();
     
     try {
-      // For a real implementation, this would compile the contract
-      // and deploy it using the compiled bytecode and ABI
+      // Compile the contract
+      const compiledContract = await this.compileContract(contractCode, contractName);
       
-      // For demonstration, we'll simulate a deployment
-      const deploymentResult = {
-        address: "0x" + Array(40).fill(0).map(() => Math.floor(Math.random() * 16).toString(16)).join(''),
-        transactionHash: "0x" + Array(64).fill(0).map(() => Math.floor(Math.random() * 16).toString(16)).join(''),
-        contractName
-      };
-      
-      return deploymentResult;
+      // Deploy the contract
+      return await this.deployCompiledContract(
+        contractName,
+        compiledContract.abi,
+        compiledContract.bytecode,
+        constructorArgs
+      );
     } catch (error) {
-      throw new Error(`Deployment failed: ${error.message}`);
+      if (error.code && error.name) {
+        throw error; // Re-throw our custom errors
+      }
+      throw createTransactionError(
+        ErrorCodes.CONTRACT_ERROR,
+        `Deployment failed: ${error.message}`,
+        { contractName }
+      );
     }
   }
   
   // Verify contract on block explorer
-  async verifyContract(contractAddress, contractName, contractCode, constructorArgs) {
+  async verifyContract(contractAddress, contractName, contractCode, constructorArgs = []) {
     if (!this.explorerApiKey) {
-      throw new Error("Explorer API key not provided");
+      throw createTransactionError(
+        ErrorCodes.INVALID_PARAMETERS,
+        'Explorer API key not provided',
+        { context: 'ContractTemplates.verifyContract' }
+      );
+    }
+    
+    if (!isAddress(contractAddress)) {
+      throw createTransactionError(
+        ErrorCodes.INVALID_ADDRESS,
+        'Invalid contract address',
+        { contractAddress }
+      );
     }
     
     try {
-      // For a real implementation, this would call the block explorer API
-      // to verify the contract
+      // Compile the contract to get the exact bytecode and ABI
+      const compiledContract = await this.compileContract(contractCode, contractName);
       
-      // For demonstration, we'll simulate a verification
-      return {
-        status: "Verification submitted",
-        guid: "verification-" + Math.random().toString(36).substring(2, 10)
+      // Prepare verification data
+      const verificationData = {
+        apikey: this.explorerApiKey,
+        module: 'contract',
+        action: 'verifysourcecode',
+        contractaddress: contractAddress,
+        sourceCode: contractCode,
+        codeformat: 'solidity-single-file',
+        contractname: contractName,
+        compilerversion: 'v0.8.20+commit.a1b79de6', // This should match the solc version
+        optimizationUsed: 1,
+        runs: 200,
+        constructorArguments: this.encodeConstructorArgs(compiledContract.abi, constructorArgs)
       };
+      
+      // Call the Polygonscan API
+      const response = await axios.post(
+        'https://api.polygonscan.com/api',
+        verificationData,
+        {
+          headers: {
+            'Content-Type': 'application/x-www-form-urlencoded'
+          }
+        }
+      );
+      
+      if (response.data.status === '1') {
+        return {
+          status: 'Verification submitted',
+          guid: response.data.result,
+          message: response.data.message
+        };
+      } else {
+        throw new Error(`Verification API error: ${response.data.message || 'Unknown error'}`);
+      }
     } catch (error) {
-      throw new Error(`Verification failed: ${error.message}`);
+      throw createTransactionError(
+        ErrorCodes.CONTRACT_ERROR,
+        `Verification failed: ${error.message}`,
+        { contractAddress, contractName }
+      );
+    }
+  }
+  
+  // Encode constructor arguments for verification
+  encodeConstructorArgs(abi, args) {
+    try {
+      // Find the constructor in the ABI
+      const constructor = abi.find(item => item.type === 'constructor');
+      
+      if (!constructor || !constructor.inputs || constructor.inputs.length === 0) {
+        // No constructor or no inputs
+        return '';
+      }
+      
+      // Create an interface to encode the constructor arguments
+      const iface = new Interface([constructor]);
+      
+      // Encode the constructor arguments
+      const encodedArgs = iface.encodeDeploy(args).slice(2); // Remove 0x prefix
+      
+      return encodedArgs;
+    } catch (error) {
+      defaultLogger.warn(`Failed to encode constructor args: ${error.message}`);
+      return '';
     }
   }
 }

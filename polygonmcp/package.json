@@ -2,11 +2,11 @@
   "name": "polygon-mcp-server",
   "version": "1.0.0",
   "description": "Polygon blockchain MCP server for interacting with Polygon network",
-  "main": "polygon MCP.js",
+  "main": "polygon-mcp.js",
   "type": "commonjs",
   "scripts": {
-    "start": "node \"polygon MCP.js\"",
-    "dev": "nodemon \"polygon MCP.js\"",
+    "start": "node \"polygon-mcp.js\"",
+    "dev": "nodemon \"polygon-mcp.js\"",
     "test": "jest",
     "test:mcp": "node test-polygon-mcp.js",
     "lint": "eslint ."
@@ -25,9 +25,11 @@
     "@maticnetwork/maticjs": "^3.6.0",
     "@maticnetwork/maticjs-web3": "^1.0.4",
     "@modelcontextprotocol/sdk": "^1.7.0",
+    "@openzeppelin/contracts": "^5.0.1",
     "axios": "^1.6.0",
     "dotenv": "^16.0.3",
     "ethers": "^6.13.5",
+    "solc": "^0.8.20",
     "zod": "^3.22.4"
   },
   "devDependencies": {
