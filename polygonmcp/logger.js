@@ -4,8 +4,14 @@ const path = require('path');
 
 // Ensure logs directory exists
 const logsDir = path.join(__dirname, 'logs');
-if (!fs.existsSync(logsDir)) {
-  fs.mkdirSync(logsDir, { recursive: true });
+try {
+  if (!fs.existsSync(logsDir)) {
+    fs.mkdirSync(logsDir, { recursive: true });
+    console.log(`Created logs directory at: ${logsDir}`);
+  }
+} catch (error) {
+  console.error(`Failed to create logs directory: ${error.message}`);
+  // Fall back to console-only logging if directory creation fails
 }
 
 // Log levels
@@ -39,7 +45,12 @@ function formatLogEntry(level, message, meta = {}) {
 // Write to log file
 function writeToLogFile(content, filename) {
   const logPath = path.join(logsDir, filename);
-  fs.appendFileSync(logPath, content);
+  try {
+    fs.appendFileSync(logPath, content);
+  } catch (error) {
+    console.error(`Failed to write to log file ${filename}: ${error.message}`);
+    // Continue execution even if log writing fails
+  }
 }
 
 // Console output with color

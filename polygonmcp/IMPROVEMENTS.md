@@ -2,77 +2,95 @@
 
 This document outlines all the changes and improvements made to the Polygon MCP Server codebase.
 
-## Structural Improvements
+## Recent Architectural Refactoring (March 28, 2025)
 
-### 1. Common Directory Structure
+### 1. Centralized Configuration Management
+- **Action:** Refactored `polygon-mcp.js` to consistently use `getConfig` from `common/config-manager.js`. Removed direct `process.env` reads in server startup and constructor.
+- **Benefit:** Ensures consistent configuration loading and easier management.
+
+### 2. Standardized Wallet Management
+- **Action:** Removed local wallet instances and `connectWallet` methods from `defi-interactions.js`, `transaction-simulation.js`, and `contract-templates.js`. All modules now rely on the central `walletManager` singleton.
+- **Benefit:** Ensures consistent wallet state, simplifies connection logic, and improves security.
+
+### 3. Refactored Bridge Logic
+- **Action:** Updated `polygon-mcp.js` to import and use the `PolygonBridge` class from `bridge-operations.js`. Removed direct `MaticPOSClient` usage and redundant methods from the main server file. Corrected hardcoded network configuration in `MaticPOSClient` initialization.
+- **Benefit:** Aligns with modular architecture, improves code organization, and makes bridge logic more maintainable.
+
+### 4. Centralized Utility Function
+- **Action:** Created `common/utils.js` and moved the duplicated `resolveTokenAddress` function into it. Updated `polygon-mcp.js`, `transaction-simulation.js`, and `defi-interactions.js` to use the centralized utility.
+- **Benefit:** Adheres to DRY principle, improves maintainability.
+
+### 5. Code Quality Fixes
+- **Action:** Addressed various ESLint errors (quotes, unused variables) introduced during the refactoring process.
+- **Benefit:** Maintains code quality and consistency.
+
+---
+
+## Previous Structural Improvements (Pre-March 28 Refactor)
+
+### 1. Common Directory Structure (Initial)
 Created a centralized `common` directory for shared code:
 - `constants.js` - Centralized token addresses and contract ABIs
-- `config-manager.js` - Centralized configuration management
-- `wallet-manager.js` - Singleton for wallet management across networks
+- `config-manager.js` - Centralized configuration management (Initial version)
+- `wallet-manager.js` - Singleton for wallet management across networks (Initial version)
 
 ### 2. Filename Fix
-- Renamed `polygon MCP.js` to `polygon-mcp.js` to avoid filename space issues
+- Renamed `polygon MCP.js` to `polygon-mcp.js`.
 
 ### 3. ESLint Configuration
-- Added `.eslintrc.js` with appropriate rules to match existing lint commands in package.json
+- Added `.eslintrc.js`.
 
 ### 4. Test Coverage
-- Added `__tests__/wallet-manager.test.js` with proper Jest mocks for testing wallet functionality
+- Added `__tests__/wallet-manager.test.js`.
 
-## Code Improvements
+## Previous Code Improvements (Pre-March 28 Refactor)
 
-### 1. Bridge Operations Fix
-- Fixed `bridge-operations.js` by replacing the non-existent `setWallet` method with proper client recreation
+### 1. Bridge Operations Fix (Initial)
+- Fixed `bridge-operations.js` by replacing the non-existent `setWallet` method with proper client recreation (Now superseded by full refactor to use this class).
 
 ### 2. Environment Configuration
-- Enhanced `.env.example` with all required configuration parameters
-- Added DeFi protocol addresses and bridge configuration options
+- Enhanced `.env.example`.
+- Added DeFi protocol addresses and bridge configuration options.
 
 ### 3. MCP Tool Registration
-- Expanded MCP tool registration in `polygon-mcp.js` to include all advertised functionality:
-  - Wallet management tools
-  - Bridge operation tools
-  - Token operation tools
-  - Gas estimation tools
-  - Contract deployment tools
-  - Transaction simulation tools
+- Expanded MCP tool registration in `polygon-mcp.js` to include advertised functionality.
 
 ### 4. Quote Style Standardization
-- Updated quote styles in key files to follow ESLint standards (single quotes)
+- Updated quote styles in key files.
 
-## Security and Performance Improvements
+## Previous Security and Performance Improvements (Pre-March 28 Refactor)
 
 ### 1. Error Handling
-- Improved error handling with contextualized error messages
-- Added proper validation of configurations and parameters
+- Improved error handling with contextualized error messages.
+- Added proper validation of configurations and parameters.
 
-### 2. Wallet Management
-- Centralized wallet management for working with multiple networks
-- Improved wallet connection validation
+### 2. Wallet Management (Initial Centralization)
+- Centralized wallet management (initial step).
+- Improved wallet connection validation.
 
 ### 3. Configuration Validation
-- Added validation for required environment variables
-- Provided helpful error messages for missing configurations
+- Added validation for required environment variables.
+- Provided helpful error messages for missing configurations.
 
-## Integration Guide
+## Integration Guide (Historical - Refer to Git History for Specific Changes)
 
-To integrate these changes:
+To integrate *previous* changes (before the latest refactor):
 
-1. **Review modified files:**
-   - `polygon-mcp.js` (renamed from `polygon MCP.js`)
+1. **Review modified files:** (Refer to relevant commits)
+   - `polygon-mcp.js`
    - `bridge-operations.js`
    - `.env.example`
-   - `.eslintrc.js` (new)
+   - `.eslintrc.js`
 
-2. **Add new files:**
+2. **Add new files:** (Refer to relevant commits)
    - `common/constants.js`
    - `common/config-manager.js`
    - `common/wallet-manager.js`
    - `__tests__/wallet-manager.test.js`
 
-3. **Test functionality:**
-   - Run ESLint to ensure code quality: `npm run lint`
-   - Run tests to validate wallet manager: `npm test`
-   - Test MCP server with example commands
+3. **Test functionality:** (Refer to relevant commits)
+   - Run ESLint: `npm run lint`
+   - Run tests: `npm test`
+   - Test MCP server.
 
-These improvements enhance code quality, maintainability, and functionality while ensuring backward compatibility with existing interfaces.
+These previous improvements enhanced code quality, maintainability, and functionality. The latest refactoring builds upon this foundation.

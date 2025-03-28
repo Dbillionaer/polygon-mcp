@@ -327,7 +327,8 @@ class ContractTemplates {
     
     // Initialize provider
     this.provider = new JsonRpcProvider(this.rpcUrl);
-    
+    this.networkName = config.networkName || 'polygon'; // Store network name
+
     // Initialize templates
     this.templates = {
       erc20: {
@@ -371,27 +372,17 @@ class ContractTemplates {
       }
     };
   }
-  
-  // Connect wallet for operations
-  // This method is maintained for backward compatibility
-  // In new code, you should use the wallet manager directly
-  connectWallet(privateKey) {
-    // Register provider if needed
-    if (!walletManager.providers.has('polygon')) {
-      walletManager.registerProvider('polygon', this.provider);
-    }
-    
-    // Connect wallet
-    walletManager.connectWallet(privateKey, 'polygon');
-  }
-  
-  // Check if wallet is connected
+
+  // Removed redundant connectWallet method - relies on central walletManager
+
+  // Check if wallet is connected using walletManager
   checkWalletConnected() {
-    if (!walletManager.isWalletConnected('polygon')) {
+    // Use the network name stored during construction
+    if (!walletManager.isWalletConnected(this.networkName)) {
       throw createWalletError(
         ErrorCodes.WALLET_NOT_CONNECTED,
-        'Wallet not connected',
-        { context: 'ContractTemplates' }
+        `Wallet not connected for network: ${this.networkName}`,
+        { context: 'ContractTemplates', network: this.networkName }
       );
     }
     return true;
@@ -527,11 +518,13 @@ class ContractTemplates {
       const compiledContract = await this.compileContract(contract.code, contract.name);
       
       // Deploy the contract
+      const wallet = walletManager.getWallet(this.networkName); // Get wallet for deployment
       return await this.deployCompiledContract(
         contract.name,
         compiledContract.abi,
         compiledContract.bytecode,
-        constructorArgs
+        constructorArgs,
+        wallet // Pass the wallet instance
       );
     } catch (error) {
       if (error.code && error.name) {
@@ -544,16 +537,17 @@ class ContractTemplates {
       );
     }
   }
-  
+
   // Deploy a compiled contract
-  async deployCompiledContract(contractName, abi, bytecode, constructorArgs = []) {
-    this.checkWalletConnected();
-    
+  async deployCompiledContract(contractName, abi, bytecode, constructorArgs = [], wallet) {
+    // Wallet check is done before calling this or passed in
+    if (!wallet) {
+       this.checkWalletConnected(); // Ensure connected if not passed
+       wallet = walletManager.getWallet(this.networkName);
+    }
+
     try {
-      // Get the wallet
-      const wallet = walletManager.getWallet('polygon');
-      
-      // Create a contract factory
+      // Create a contract factory using the provided wallet
       const factory = new ethers.ContractFactory(abi, '0x' + bytecode, wallet);
       
       // Deploy the contract
@@ -599,18 +593,20 @@ class ContractTemplates {
   
   // Deploy custom contract
   async deployContract(contractName, contractCode, constructorArgs = []) {
-    this.checkWalletConnected();
-    
+    this.checkWalletConnected(); // Ensure wallet is connected before starting
+
     try {
       // Compile the contract
       const compiledContract = await this.compileContract(contractCode, contractName);
-      
+
       // Deploy the contract
+      const wallet = walletManager.getWallet(this.networkName); // Get wallet for deployment
       return await this.deployCompiledContract(
         contractName,
         compiledContract.abi,
         compiledContract.bytecode,
-        constructorArgs
+        constructorArgs,
+        wallet // Pass the wallet instance
       );
     } catch (error) {
       if (error.code && error.name) {

@@ -11,6 +11,7 @@ const {
 const { ErrorCodes, createTransactionError, createWalletError } = require('./errors');
 const { defaultLogger } = require('./logger');
 const walletManager = require('./common/wallet-manager');
+const { resolveTokenAddress: commonResolveTokenAddress } = require('./common/utils'); // Import centralized util
 const { ERC20_ABI, ERC20_TRANSFER_SIGNATURE } = require('./common/constants');
 
 class TransactionSimulator {
@@ -22,29 +23,10 @@ class TransactionSimulator {
     // Initialize provider
     this.provider = new JsonRpcProvider(this.rpcUrl);
   }
-  
-  // Connect wallet for operations
-  // This method is maintained for backward compatibility
-  // In new code, you should use the wallet manager directly
-  connectWallet(privateKey) {
-    if (!privateKey) {
-      throw createWalletError(
-        ErrorCodes.WALLET_NOT_CONNECTED,
-        'Private key is required to connect wallet',
-        { context: 'TransactionSimulator.connectWallet' }
-      );
-    }
-    
-    // Register provider if needed
-    if (!walletManager.providers.has('polygon')) {
-      walletManager.registerProvider('polygon', this.provider);
-    }
-    
-    // Connect wallet
-    walletManager.connectWallet(privateKey, 'polygon');
-  }
-  
-  // Check if wallet is connected
+
+  // Removed redundant connectWallet method - relies on central walletManager
+
+  // Check if wallet is connected using walletManager
   checkWalletConnected() {
     if (!walletManager.isWalletConnected('polygon')) {
       throw createWalletError(
@@ -55,25 +37,13 @@ class TransactionSimulator {
     }
     return true;
   }
-  
-  // Helper to resolve token address from symbol or address
+
+  // Use the centralized resolveTokenAddress function
   resolveTokenAddress(token) {
-    if (isAddress(token)) {
-      return token;
-    }
-    
-    const upperToken = token.toUpperCase();
-    if (this.tokenAddresses[upperToken]) {
-      return this.tokenAddresses[upperToken];
-    }
-    
-    throw createTransactionError(
-      ErrorCodes.INVALID_ADDRESS,
-      `Unknown token: ${token}`,
-      { token }
-    );
+    // Pass the tokenAddresses map from this instance's config
+    return commonResolveTokenAddress(token, this.tokenAddresses);
   }
-  
+
   // Simulate a transaction using eth_call
   async simulateTransaction(transaction) {
     try {

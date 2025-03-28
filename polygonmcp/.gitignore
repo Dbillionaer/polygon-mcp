@@ -41,3 +41,7 @@ github-server/
 github-mcp-server/
 puppeteer/
 puppeteer-server/
+
+# Cline specific files (Do not commit)
+memory-bank/
+.clinerules

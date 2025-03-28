@@ -112,11 +112,13 @@ npm run dev
 
 3. **Simulate a transaction**:
    ```javascript
+   // Assuming wallet is connected centrally when server starts
+   // server.connectWallet(process.env.PRIVATE_KEY); // Connection handled centrally
+
    async function simulateTransaction() {
-     server.connectWallet(process.env.PRIVATE_KEY);
      const result = await server.simulateTransaction({
        to: '0x1234...', // Recipient address
-       value: '0.01',    // Amount in MATIC
+       value: '0.01',    // Amount in MATIC (or native token)
      });
      console.log('Simulation result:', result);
    }
@@ -158,15 +160,17 @@ Supported contract types:
 
 | Tool | Description | Example |
 |------|-------------|---------|
-| `bridge-to-polygon` | Bridge assets from Ethereum to Polygon | `await server.bridgeToPolygon(token, amount)` |
-| `bridge-to-ethereum` | Bridge assets from Polygon back to Ethereum | `await server.bridgeToEthereum(token, amount)` |
-| `check-bridge-status` | Check the status of a bridge transaction | `const status = await server.checkBridgeStatus(txHash)` |
+| `deposit-eth` | Deposit ETH from Ethereum to Polygon | `await server.mcpServer.callTool('deposit-eth', { amount: '0.1' })` |
+| `withdraw-eth` | Withdraw ETH/POL from Polygon to Ethereum | `await server.mcpServer.callTool('withdraw-eth', { amount: '0.1' })` |
+| `deposit-token` | Deposit ERC20 from Ethereum to Polygon | `await server.mcpServer.callTool('deposit-token', { token: 'USDC', amount: '100' })` |
+| `withdraw-token` | Withdraw ERC20 from Polygon to Ethereum | `await server.mcpServer.callTool('withdraw-token', { token: 'USDC', amount: '100' })` |
+| `check-bridge-status` | Check the status of a bridge transaction (Not yet implemented as tool) | `N/A` |
 
 Features:
-- Support for both ETH and ERC20 token bridging
-- Standardized MaticPOSClient initialization
-- Enhanced error handling for bridge operations
-- Checkpoint monitoring
+- Support for both ETH and ERC20 token bridging via `PolygonBridge` class.
+- Encapsulated `MaticPOSClient` usage within `bridge-operations.js`.
+- Enhanced error handling for bridge operations.
+- Checkpoint awareness (inherent in `MaticPOSClient`).
 
 ### DeFi Interactions
 
@@ -220,35 +224,46 @@ Features:
 
 The Polygon MCP Server is built with a modular architecture that separates concerns and promotes maintainability:
 
-```
-┌─────────────────────────────────────────────────────────────┐
-│                     Polygon MCP Server                      │
-│                                                             │
-│  ┌─────────────┐  ┌─────────────┐  ┌─────────────────────┐  │
-│  │             │  │             │  │                     │  │
-│  │   Wallet    │  │  Contract   │  │  Transaction        │  │
-│  │   Manager   │  │  Templates  │  │  Simulator          │  │
-│  │             │  │             │  │                     │  │
-│  └─────────────┘  └─────────────┘  └─────────────────────┘  │
-│                                                             │
-│  ┌─────────────┐  ┌─────────────┐  ┌─────────────────────┐  │
-│  │             │  │             │  │                     │  │
-│  │   Bridge    │  │    DeFi     │  │  Validation &       │  │
-│  │ Operations  │  │ Interactions│  │  Error Handling     │  │
-│  │             │  │             │  │                     │  │
-│  └─────────────┘  └─────────────┘  └─────────────────────┘  │
-│                                                             │
-└─────────────────────────────────────────────────────────────┘
+```mermaid
+flowchart TD
+    MCPServer["Polygon MCP Server (polygon-mcp.js)"]
+
+    subgraph Modules
+        BridgeOps["Bridge Operations (bridge-operations.js)"]
+        ContractOps["Contract Templates (contract-templates.js)"]
+        DeFiOps["DeFi Interactions (defi-interactions.js)"]
+        SimOps["Transaction Simulator (transaction-simulation.js)"]
+    end
+
+    subgraph Common ["Common Utilities (common/)"]
+        WalletManager["Wallet Manager (Singleton)"]
+        ConfigManager["Configuration Manager"]
+        Utils["Utility Functions (utils.js)"]
+        Constants["Constants"]
+        Logger["Logger (logger.js)"]
+        Errors["Error Handling (errors.js)"]
+        Validation["Validation (validation.js)"]
+    end
+
+    MCPServer -- instantiates/uses --> Modules
+    MCPServer -- uses --> Common
+    Modules -- use --> Common
 ```
 
 ### Key Components
 
-1. **Wallet Manager**: Handles wallet connections, address management, and transaction signing
-2. **Contract Templates**: Provides templates for common smart contracts and deployment functionality
-3. **Transaction Simulator**: Simulates transactions to preview their effects before execution
-4. **Bridge Operations**: Manages asset transfers between Ethereum and Polygon
-5. **DeFi Interactions**: Interfaces with various DeFi protocols on Polygon
-6. **Validation & Error Handling**: Ensures input validation and proper error reporting
+1.  **Polygon MCP Server (`polygon-mcp.js`)**: Main entry point, handles MCP communication, instantiates modules, registers tools, delegates calls.
+2.  **Common Utilities (`common/`)**:
+    *   **Wallet Manager**: Singleton for centralized wallet state and access.
+    *   **Configuration Manager**: Singleton for centralized configuration loading (`getConfig`).
+    *   **Utility Functions**: Shared helpers like `resolveTokenAddress`.
+    *   **Constants**: Shared ABIs, addresses.
+    *   **Logger, Errors, Validation**: Support components.
+3.  **Functional Modules**:
+    *   **Bridge Operations (`bridge-operations.js`)**: Encapsulates `MaticPOSClient` and bridge logic.
+    *   **Contract Templates (`contract-templates.js`)**: Handles contract compilation, deployment from templates.
+    *   **DeFi Interactions (`defi-interactions.js`)**: Interfaces with DEXs (QuickSwap, Uniswap), Polymarket.
+    *   **Transaction Simulator (`transaction-simulation.js`)**: Simulates transactions using `eth_call`.
 
 ### Data Flow
 
@@ -260,54 +275,49 @@ The Polygon MCP Server is built with a modular architecture that separates conce
 
 ## API Reference
 
-### Wallet Operations
+### Wallet Operations (via MCP Tools)
 
-#### `connectWallet(privateKey)`
-Connects a wallet using the provided private key.
-
-**Parameters:**
-- `privateKey` (string): The private key for the wallet
-
-**Returns:** void
-
-#### `getAddress()`
+#### `get-address`
 Gets the address of the connected wallet.
 
-**Returns:** string - The wallet address
+**Returns:** JSON string `{ "address": "0x..." }`
 
-#### `listBalances()`
-Lists all token balances for the connected wallet.
+#### `list-balances`
+Lists native and known token balances for the connected wallet (or specified address).
 
-**Returns:** Object - Token balances with symbols as keys
+**Parameters (Optional):**
+- `address` (string): Address to check (defaults to connected wallet)
 
-#### `transferFunds(to, amount, token = 'MATIC')`
-Transfers funds to another address.
+**Returns:** JSON string `{ "address": "...", "nativeBalance": "...", "tokens": { "USDC": "...", ... } }`
+
+#### `transfer-funds`
+Transfers native token (POL) or ERC20 tokens to another address.
 
 **Parameters:**
 - `to` (string): Recipient address
 - `amount` (string): Amount to transfer
-- `token` (string, optional): Token symbol (default: 'MATIC')
+- `token` (string, optional): Token symbol or address (omit for native POL)
 
-**Returns:** Object - Transaction receipt
+**Returns:** JSON string `{ "success": true, "txHash": "0x...", ... }`
 
-### Contract Operations
+### Contract Operations (via MCP Tools)
 
-#### `listContractTemplates()`
+#### `list-contract-templates`
 Lists available contract templates.
 
-**Returns:** Array - List of available templates
+**Returns:** JSON string `[{ "id": "erc20", "name": "...", ... }, ...]`
 
-#### `deployContract(name, code, constructorArgs)`
-Deploys a contract to the Polygon network.
+#### `deploy-contract`
+Deploys a contract from a template.
 
 **Parameters:**
-- `name` (string): Contract name
-- `code` (string): Contract source code
-- `constructorArgs` (Array): Constructor arguments
+- `templateId` (string): ID of the template (e.g., 'erc20', 'nft')
+- `params` (object): Parameters specific to the template (e.g., `{ "name": "MyToken", ... }`)
+- `constructorArgs` (Array, optional): Arguments for the contract constructor
 
-**Returns:** Object - Deployment result with contract address
+**Returns:** JSON string `{ "address": "0x...", "transactionHash": "0x...", ... }`
 
-#### `verifyContract(address, name, code, constructorArgs)`
+#### `verify-contract` (Not currently exposed as an MCP tool)
 Verifies a contract on Polygonscan.
 
 **Parameters:**
@@ -316,55 +326,63 @@ Verifies a contract on Polygonscan.
 - `code` (string): Contract source code
 - `constructorArgs` (Array): Constructor arguments
 
-**Returns:** Object - Verification result
+**Returns:** Object - Verification result (if implemented as tool)
 
-### Bridge Operations
+### Bridge Operations (via MCP Tools)
 
-#### `bridgeToPolygon(token, amount)`
-Bridges assets from Ethereum to Polygon.
+#### `deposit-eth`
+Deposits ETH from Ethereum to Polygon.
+
+**Parameters:**
+- `amount` (string): Amount of ETH to deposit
+
+**Returns:** JSON string `{ "txHash": "0x...", "status": "pending" }`
+
+#### `withdraw-eth`
+Withdraws ETH/POL from Polygon to Ethereum.
 
 **Parameters:**
 - `token` (string): Token symbol or address
 - `amount` (string): Amount to bridge
 
-**Returns:** Object - Transaction receipt
+**Returns:** JSON string `{ "txHash": "0x...", "status": "pending" }`
 
-#### `bridgeToEthereum(token, amount)`
-Bridges assets from Polygon back to Ethereum.
+#### `deposit-token`
+Deposits an ERC20 token from Ethereum to Polygon.
 
 **Parameters:**
 - `token` (string): Token symbol or address
-- `amount` (string): Amount to bridge
+- `amount` (string): Amount to deposit
 
-**Returns:** Object - Transaction receipt
+**Returns:** JSON string `{ "txHash": "0x...", "status": "pending" }`
 
-#### `checkBridgeStatus(txHash)`
-Checks the status of a bridge transaction.
+#### `withdraw-token`
+Withdraws an ERC20 token from Polygon to Ethereum.
 
 **Parameters:**
-- `txHash` (string): Transaction hash
+- `token` (string): Token symbol or address
+- `amount` (string): Amount to withdraw
 
-**Returns:** Object - Bridge status
+**Returns:** JSON string `{ "txHash": "0x...", "status": "pending" }`
+
+*(Note: `check-bridge-status` is implemented in `PolygonBridge` but not exposed as an MCP tool yet)*
 
 ## Advanced Usage
 
 ### Combining Multiple Operations
 
 ```javascript
-// Example: Swap tokens and then bridge to Ethereum
+// Example: Swap tokens and then bridge to Ethereum (Conceptual using MCP tools)
 async function swapAndBridge() {
-  // Connect wallet
-  server.connectWallet(process.env.PRIVATE_KEY);
-  
-  // Swap MATIC to USDC
-  const swapResult = await server.swapTokens('MATIC', 'USDC', '10');
-  console.log('Swap result:', swapResult);
-  
-  // Wait for confirmation
-  await server.provider.waitForTransaction(swapResult.hash);
-  
+  // Assume server is running and wallet connected via env/config
+
+  // Swap MATIC to USDC (using a hypothetical swap tool - needs implementation)
+  // const swapResult = await server.mcpServer.callTool('swap-tokens', { fromToken: 'MATIC', toToken: 'USDC', amount: '10' });
+  // console.log('Swap result:', swapResult);
+  // await server.provider.waitForTransaction(swapResult.content[0].text.txHash); // Wait for swap tx
+
   // Bridge USDC to Ethereum
-  const bridgeResult = await server.bridgeToEthereum('USDC', '10');
+  const bridgeResult = await server.mcpServer.callTool('withdraw-token', { token: 'USDC', amount: '10' });
   console.log('Bridge result:', bridgeResult);
 }
 ```
@@ -372,15 +390,31 @@ async function swapAndBridge() {
 ### Custom Contract Deployment
 
 ```javascript
-// Deploy a custom ERC20 token
+// Deploy a custom ERC20 token using templates (Conceptual using MCP tools)
 async function deployCustomToken() {
-  server.connectWallet(process.env.PRIVATE_KEY);
-  
-  // Get the ERC20 template
-  const templates = await server.listContractTemplates();
-  const erc20Template = templates.find(t => t.id === 'erc20');
-  
-  // Customize the template
+  // Assume server is running and wallet connected via env/config
+
+  // Get the ERC20 template info (optional step)
+  // const templates = await server.mcpServer.callTool('list-contract-templates', {});
+  // console.log(templates);
+
+  // Define parameters
+  const templateId = 'erc20';
+  const params = { name: 'MyCustomToken' }; // Name is used in template processing
+  const constructorArgs = ['MyCustomToken', 'MCT', '1000000000000000000000000']; // Name, Symbol, InitialSupply (in wei)
+
+  // Deploy the contract
+  const deployResult = await server.mcpServer.callTool('deploy-contract', {
+    templateId,
+    params,
+    constructorArgs
+  });
+  const deployData = JSON.parse(deployResult.content[0].text);
+  console.log('Contract deployed at:', deployData.address);
+
+  // Verification would need the source code, which isn't directly returned by deploy-contract
+  // Verification might need a separate tool or manual process.
+}
   const customizedCode = erc20Template.code
     .replace('{{name}}', 'MyCustomToken')
     .replace('initialSupply * 10 ** decimals()', '1000000 * 10 ** 18');
@@ -391,37 +425,25 @@ async function deployCustomToken() {
     customizedCode,
     ['MyCustomToken', 'MCT', 1000000]
   );
-  
-  console.log('Contract deployed at:', result.address);
-  
-  // Verify the contract
-  const verification = await server.verifyContract(
-    result.address,
-    'MyCustomToken',
-    customizedCode,
-    ['MyCustomToken', 'MCT', 1000000]
-  );
-  
-  console.log('Verification result:', verification);
-}
 ```
 
 ### Transaction Simulation for Security
 
 ```javascript
-// Simulate a transaction before executing it
+// Simulate a transaction before executing it (Conceptual using MCP tools)
 async function safeTransfer() {
-  server.connectWallet(process.env.PRIVATE_KEY);
-  
-  const tx = {
+  // Assume server is running and wallet connected via env/config
+
+  const txParams = {
     to: '0x1234...',
-    value: ethers.utils.parseEther('1.0'),
-    data: '0x'
+    value: '1000000000000000000', // 1 POL in wei
+    // data: '0x' // Optional data
   };
-  
+
   // Simulate first
-  const simulation = await server.simulateTransaction(tx);
-  
+  const simResult = await server.mcpServer.callTool('simulate-transaction', { transaction: txParams });
+  const simulation = JSON.parse(simResult.content[0].text);
+
   // Check for issues
   if (!simulation.success) {
     console.error('Transaction would fail:', simulation.errorMessage);
@@ -430,11 +452,12 @@ async function safeTransfer() {
   
   // Check gas costs
   console.log('Estimated gas cost:', simulation.gasCost.ether, 'MATIC');
-  
-  // Execute if simulation was successful
-  const wallet = server.getWallet();
-  const result = await wallet.sendTransaction(tx);
-  console.log('Transaction sent:', result.hash);
+  // Execute if simulation was successful (using transfer-funds tool)
+  const transferResult = await server.mcpServer.callTool('transfer-funds', {
+    to: txParams.to,
+    amount: '1.0' // Amount in POL for the tool
+  });
+  console.log('Transaction sent:', transferResult);
 }
 ```
 
@@ -443,11 +466,7 @@ async function safeTransfer() {
 ### Common Issues
 
 #### "Wallet not connected" Error
-Make sure you've called `connectWallet()` before any operation that requires a wallet.
-
-```javascript
-server.connectWallet(process.env.PRIVATE_KEY);
-```
+Ensure the `PRIVATE_KEY` is correctly set in the `.env` file or MCP server configuration, as the wallet connects automatically on server start if the key is provided. Manual `connectWallet` calls are no longer the primary mechanism.
 
 #### RPC Connection Issues
 If you're experiencing RPC connection issues, try:
@@ -548,14 +567,15 @@ For Cursor/Claude Dev:
 - `bridge-operations.js` - L2 bridge operations
 - `contract-templates.js` - Contract deployment templates
 - `defi-interactions.js` - DeFi protocol interactions
-- `transaction-simulation.js` - Transaction simulation
-- `logger.js` - Structured logging
-- `errors.js` - Custom error handling
-- `validation.js` - Input validation utilities
-- `common/` - Shared utilities and constants
-  - `config-manager.js` - Configuration management
-  - `constants.js` - Shared constants
-  - `wallet-manager.js` - Wallet management
+- `transaction-simulation.js` - Transaction simulation logic.
+- `logger.js` - Structured logging utility.
+- `errors.js` - Custom error classes and helpers.
+- `validation.js` - Input validation helpers (potentially underutilized).
+- `common/` - Shared utilities and constants:
+  - `config-manager.js` - Centralized configuration loading (`getConfig`).
+  - `constants.js` - Shared ABIs, addresses.
+  - `wallet-manager.js` - Singleton wallet manager.
+  - `utils.js` - Centralized utility functions (e.g., `resolveTokenAddress`).
 
 ## License
 

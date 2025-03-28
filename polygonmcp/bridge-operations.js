@@ -1,7 +1,8 @@
 // bridge-operations.js - Polygon Bridge Operations using @maticnetwork/maticjs
 const { MaticPOSClient } = require('@maticnetwork/maticjs');
-const { JsonRpcProvider, Wallet, parseEther, formatEther, parseUnits } = require('ethers');
+const { JsonRpcProvider, parseEther, formatEther, parseUnits } = require('ethers');
 const { ErrorCodes, createWalletError, createTransactionError } = require('./errors');
+const walletManager = require('./common/wallet-manager');
 
 class PolygonBridge {
   constructor(config) {
@@ -26,39 +27,73 @@ class PolygonBridge {
     });
   }
   
-  // Connect wallet for operations
+  // Connect wallet for operations using wallet manager
   connectWallet(privateKey) {
     if (!privateKey) {
       throw createWalletError(
         ErrorCodes.WALLET_NOT_CONNECTED,
-        "Private key is required to connect wallet",
-        { context: "PolygonBridge.connectWallet" }
+        'Private key is required to connect wallet',
+        { context: 'PolygonBridge.connectWallet' }
       );
     }
-    this.rootWallet = new Wallet(privateKey, this.rootProvider);
-    this.childWallet = new Wallet(privateKey, this.childProvider);
+    
+    // Register providers with wallet manager if needed
+    if (!walletManager.providers.has('ethereum')) {
+      walletManager.registerProvider('ethereum', this.rootProvider);
+    }
+    if (!walletManager.providers.has('polygon')) {
+      walletManager.registerProvider('polygon', this.childProvider);
+    }
+    
+    // Connect wallets to both networks
+    walletManager.connectToMultipleNetworks(privateKey, ['ethereum', 'polygon']);
     
     // Recreate MaticPOSClient with wallet addresses
+    this.updateMaticPOSClient();
+  }
+  
+  // Update MaticPOSClient with wallet addresses
+  updateMaticPOSClient() {
+    if (!walletManager.isWalletConnected('ethereum') || !walletManager.isWalletConnected('polygon')) {
+      throw createWalletError(
+        ErrorCodes.WALLET_NOT_CONNECTED,
+        'Wallets not connected for both networks',
+        { context: 'PolygonBridge.updateMaticPOSClient' }
+      );
+    }
+    
     this.maticPOSClient = new MaticPOSClient({
       network: 'mainnet',
       version: 'v1',
       maticProvider: this.childProvider,
       parentProvider: this.rootProvider,
       posRootChainManager: this.posRootChainManager,
-      parentDefaultOptions: { confirmations: 2, from: this.rootWallet.address },
-      maticDefaultOptions: { confirmations: 2, from: this.childWallet.address }
+      parentDefaultOptions: { 
+        confirmations: 2, 
+        from: walletManager.getAddress('ethereum')
+      },
+      maticDefaultOptions: { 
+        confirmations: 2, 
+        from: walletManager.getAddress('polygon')
+      }
     });
+  }
+  
+  // Check if wallet is connected for both networks
+  checkWalletConnected() {
+    if (!walletManager.isWalletConnected('ethereum') || !walletManager.isWalletConnected('polygon')) {
+      throw createWalletError(
+        ErrorCodes.WALLET_NOT_CONNECTED,
+        'Wallets not connected for both networks',
+        { context: 'PolygonBridge' }
+      );
+    }
+    return true;
   }
   
   // Deposit ETH to Polygon
   async depositETH(amount) {
-    if (!this.rootWallet) {
-      throw createWalletError(
-        ErrorCodes.WALLET_NOT_CONNECTED,
-        "Wallet not connected",
-        { context: "PolygonBridge.depositETH" }
-      );
-    }
+    this.checkWalletConnected();
     
     try {
       // Convert amount to wei
@@ -66,7 +101,7 @@ class PolygonBridge {
       
       // Deposit ETH to Polygon using MaticPOSClient
       const tx = await this.maticPOSClient.depositEther(amountWei, {
-        from: this.rootWallet.address,
+        from: walletManager.getAddress('ethereum'),
         gasLimit: 300000
       });
       
@@ -78,7 +113,7 @@ class PolygonBridge {
         blockNumber: receipt.blockNumber,
         from: receipt.from,
         amount: formatEther(amountWei),
-        status: "Deposit initiated"
+        status: 'Deposit initiated'
       };
     } catch (error) {
       throw createTransactionError(
@@ -91,13 +126,7 @@ class PolygonBridge {
   
   // Deposit ERC20 to Polygon
   async depositERC20(tokenAddress, amount) {
-    if (!this.rootWallet) {
-      throw createWalletError(
-        ErrorCodes.WALLET_NOT_CONNECTED,
-        "Wallet not connected",
-        { context: "PolygonBridge.depositERC20" }
-      );
-    }
+    this.checkWalletConnected();
     
     try {
       // Get token details
@@ -110,10 +139,10 @@ class PolygonBridge {
       // Deposit tokens to Polygon using MaticPOSClient
       const tx = await this.maticPOSClient.depositERC20ForUser(
         tokenAddress,
-        this.rootWallet.address,
+        walletManager.getAddress('ethereum'),
         amountInTokenUnits,
         {
-          from: this.rootWallet.address,
+          from: walletManager.getAddress('ethereum'),
           gasLimit: 300000
         }
       );
@@ -127,7 +156,7 @@ class PolygonBridge {
         from: receipt.from,
         tokenAddress,
         amount: amount.toString(),
-        status: "Deposit initiated"
+        status: 'Deposit initiated'
       };
     } catch (error) {
       throw createTransactionError(
@@ -140,13 +169,7 @@ class PolygonBridge {
   
   // Withdraw POL (formerly MATIC) from Polygon to Ethereum
   async withdrawPOL(amount) {
-    if (!this.childWallet) {
-      throw createWalletError(
-        ErrorCodes.WALLET_NOT_CONNECTED,
-        "Wallet not connected",
-        { context: "PolygonBridge.withdrawPOL" }
-      );
-    }
+    this.checkWalletConnected();
     
     try {
       // Convert amount to wei
@@ -154,7 +177,7 @@ class PolygonBridge {
       
       // Withdraw POL using MaticPOSClient
       const tx = await this.maticPOSClient.withdrawMatic(amountWei, {
-        from: this.childWallet.address,
+        from: walletManager.getAddress('polygon'),
         gasLimit: 300000
       });
       
@@ -166,7 +189,7 @@ class PolygonBridge {
         blockNumber: receipt.blockNumber,
         from: receipt.from,
         amount: formatEther(amountWei),
-        status: "Withdrawal initiated, waiting for checkpoint"
+        status: 'Withdrawal initiated, waiting for checkpoint'
       };
     } catch (error) {
       throw createTransactionError(
@@ -184,13 +207,7 @@ class PolygonBridge {
   
   // Withdraw ERC20 from Polygon to Ethereum
   async withdrawERC20(tokenAddress, amount) {
-    if (!this.childWallet) {
-      throw createWalletError(
-        ErrorCodes.WALLET_NOT_CONNECTED,
-        "Wallet not connected",
-        { context: "PolygonBridge.withdrawERC20" }
-      );
-    }
+    this.checkWalletConnected();
     
     try {
       // Get token details
@@ -205,7 +222,7 @@ class PolygonBridge {
         tokenAddress,
         amountInTokenUnits,
         {
-          from: this.childWallet.address,
+          from: walletManager.getAddress('polygon'),
           gasLimit: 300000
         }
       );
@@ -219,7 +236,7 @@ class PolygonBridge {
         from: receipt.from,
         tokenAddress,
         amount: amount.toString(),
-        status: "Withdrawal initiated, waiting for checkpoint"
+        status: 'Withdrawal initiated, waiting for checkpoint'
       };
     } catch (error) {
       throw createTransactionError(
