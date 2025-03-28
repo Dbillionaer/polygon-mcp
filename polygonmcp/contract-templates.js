@@ -2,12 +2,8 @@
 const ethers = require('ethers');
 const { 
   JsonRpcProvider, 
-  Contract, 
   Interface,
-  formatUnits,
-  parseUnits,
-  isAddress,
-  ContractFactory
+  isAddress
 } = ethers;
 const axios = require('axios');
 const { ErrorCodes, createTransactionError, createWalletError } = require('./errors');
@@ -335,42 +331,42 @@ class ContractTemplates {
     // Initialize templates
     this.templates = {
       erc20: {
-        name: "ERC20Token",
+        name: 'ERC20Token',
         code: ERC20_TEMPLATE,
-        description: "Standard ERC20 token with minting capability",
+        description: 'Standard ERC20 token with minting capability',
         parameters: {
-          name: "string",
-          symbol: "string",
-          initialSupply: "uint256"
+          name: 'string',
+          symbol: 'string',
+          initialSupply: 'uint256'
         }
       },
       nft: {
-        name: "NFTCollection",
+        name: 'NFTCollection',
         code: NFT_TEMPLATE,
-        description: "ERC721 NFT collection with minting capability",
+        description: 'ERC721 NFT collection with minting capability',
         parameters: {
-          name: "string",
-          symbol: "string",
-          baseURI: "string"
+          name: 'string',
+          symbol: 'string',
+          baseURI: 'string'
         }
       },
       staking: {
-        name: "StakingContract",
+        name: 'StakingContract',
         code: STAKING_TEMPLATE,
-        description: "Simple staking contract with rewards",
+        description: 'Simple staking contract with rewards',
         parameters: {
-          stakingToken: "address",
-          rewardToken: "address",
-          rewardRate: "uint256"
+          stakingToken: 'address',
+          rewardToken: 'address',
+          rewardRate: 'uint256'
         }
       },
       multisig: {
-        name: "MultisigWallet",
+        name: 'MultisigWallet',
         code: MULTISIG_TEMPLATE,
-        description: "Multi-signature wallet",
+        description: 'Multi-signature wallet',
         parameters: {
-          owners: "address[]",
-          required: "uint256"
+          owners: 'address[]',
+          required: 'uint256'
         }
       }
     };
@@ -443,7 +439,7 @@ class ContractTemplates {
     }
     
     // Replace template name
-    let code = template.code.replace(/{{name}}/g, parameters.name || template.name);
+    const code = template.code.replace(/{{name}}/g, parameters.name || template.name);
     
     // For a real implementation, this would do more sophisticated template processing
     // based on the parameters

@@ -1,7 +1,6 @@
-// polygon MCP.js - Main Polygon MCP Implementation
+// polygon-mcp.js - Main Polygon MCP Implementation
 const { 
   JsonRpcProvider, 
-  Wallet, 
   Contract,
   formatUnits,
   parseUnits,
@@ -15,6 +14,7 @@ const { ContractTemplates } = require('./contract-templates');
 const { ErrorCodes, createWalletError, createTransactionError } = require('./errors');
 const { z } = require('zod');
 const { defaultLogger } = require('./logger');
+const walletManager = require('./common/wallet-manager');
 const { 
   ERC20_ABI, 
   ERC721_ABI, 
@@ -37,6 +37,10 @@ class PolygonMCPServer {
     // Initialize providers
     this.provider = new JsonRpcProvider(this.rpcUrl);
     this.parentProvider = new JsonRpcProvider(config.parentRpcUrl);
+    
+    // Register providers with wallet manager
+    walletManager.registerProvider('polygon', this.provider);
+    walletManager.registerProvider('ethereum', this.parentProvider);
     
     // Initialize MaticPOSClient for bridge operations
     this.maticClient = new MaticPOSClient({
@@ -74,10 +78,11 @@ class PolygonMCPServer {
       {},
       async () => {
         this.checkWalletConnected();
+        const address = walletManager.getAddress('polygon');
         return {
           content: [{
             type: 'text',
-            text: JSON.stringify({ address: this.wallet.address })
+            text: JSON.stringify({ address })
           }]
         };
       }
@@ -89,7 +94,7 @@ class PolygonMCPServer {
         address: z.string().optional().describe('Address to receive testnet MATIC (defaults to wallet address)') 
       },
       async ({ address }) => {
-        const recipient = address || this.wallet?.address;
+        const recipient = address || (walletManager.isWalletConnected('polygon') ? walletManager.getAddress('polygon') : null);
         
         if (!recipient) {
           throw createWalletError(
@@ -121,7 +126,7 @@ class PolygonMCPServer {
         address: z.string().optional().describe("Address to check balances for (defaults to wallet address)")
       },
       async ({ address }) => {
-        const checkAddress = address || this.wallet?.address;
+        const checkAddress = address || (walletManager.isWalletConnected('polygon') ? walletManager.getAddress('polygon') : null);
         
         if (!checkAddress) {
           throw createWalletError(
@@ -175,7 +180,8 @@ class PolygonMCPServer {
         if (!token) {
           // Transfer native token (POL)
           const amountWei = parseUnits(amount, 18);
-          const tx = await this.wallet.sendTransaction({
+          const wallet = walletManager.getWallet('polygon');
+          const tx = await wallet.sendTransaction({
             to,
             value: amountWei,
             gasLimit: 21000
@@ -190,7 +196,7 @@ class PolygonMCPServer {
               text: JSON.stringify({
                 success: true,
                 txHash,
-                from: this.wallet.address,
+                from: walletManager.getAddress('polygon'),
                 to,
                 amount,
                 token: "POL (native)"
@@ -205,7 +211,8 @@ class PolygonMCPServer {
           const tokenSymbol = await tokenContract.symbol().catch(() => token);
           
           const amountInTokenUnits = parseUnits(amount, decimals);
-          const tokenContractWithSigner = tokenContract.connect(this.wallet);
+          const wallet = walletManager.getWallet('polygon');
+          const tokenContractWithSigner = tokenContract.connect(wallet);
           
           const tx = await tokenContractWithSigner.transfer(to, amountInTokenUnits);
           await tx.wait();
@@ -217,7 +224,7 @@ class PolygonMCPServer {
               text: JSON.stringify({
                 success: true,
                 txHash,
-                from: this.wallet.address,
+                from: walletManager.getAddress('polygon'),
                 to,
                 amount,
                 token: tokenSymbol,
@@ -423,7 +430,7 @@ class PolygonMCPServer {
     await this.mcpServer.connect(transport);
   }
   
-  // Connect wallet for operations
+  // Connect wallet for operations using centralized wallet manager
   connectWallet(privateKey) {
     if (!privateKey) {
       throw createWalletError(
@@ -432,13 +439,45 @@ class PolygonMCPServer {
         { context: "PolygonMCPServer.connectWallet" }
       );
     }
-    this.wallet = new Wallet(privateKey, this.provider);
+    
+    // Connect wallets to both networks
+    walletManager.connectToMultipleNetworks(privateKey, ['polygon', 'ethereum']);
+    
+    // Connect to simulator (will modify transaction-simulation.js later to use wallet manager)
     this.simulator.connectWallet(privateKey);
+    
+    // Also connect wallet to contract templates
+    this.contractTemplates.connectWallet(privateKey);
+    
+    // Update MaticPOSClient with wallet addresses
+    this.updateMaticClientWalletAddresses();
+  }
+  
+  // Update MaticPOSClient with wallet addresses
+  updateMaticClientWalletAddresses() {
+    if (walletManager.isWalletConnected('ethereum') && walletManager.isWalletConnected('polygon')) {
+      // Re-create MaticPOSClient with wallet addresses
+      this.maticClient = new MaticPOSClient({
+        network: 'mainnet',
+        version: 'v1',
+        maticProvider: this.provider,
+        parentProvider: this.parentProvider,
+        posRootChainManager: this.posRootChainManager,
+        parentDefaultOptions: { 
+          confirmations: 2, 
+          from: walletManager.getAddress('ethereum')
+        },
+        maticDefaultOptions: { 
+          confirmations: 2, 
+          from: walletManager.getAddress('polygon')
+        }
+      });
+    }
   }
   
   // Check if wallet is connected
   checkWalletConnected() {
-    if (!this.wallet) {
+    if (!walletManager.isWalletConnected('polygon')) {
       throw createWalletError(
         ErrorCodes.WALLET_NOT_CONNECTED,
         "Wallet not connected",
@@ -472,7 +511,7 @@ class PolygonMCPServer {
     
     try {
       const tx = await this.maticClient.depositEther(amount, {
-        from: this.wallet.address,
+        from: walletManager.getAddress('ethereum'),
         gasLimit: 500000
       });
       
@@ -494,7 +533,7 @@ class PolygonMCPServer {
     
     try {
       const tx = await this.maticClient.withdrawEther(amount, {
-        from: this.wallet.address,
+        from: walletManager.getAddress('polygon'),
         gasLimit: 500000
       });
       
@@ -518,10 +557,10 @@ class PolygonMCPServer {
       const tokenAddress = this.resolveTokenAddress(token);
       const tx = await this.maticClient.depositERC20ForUser(
         tokenAddress,
-        this.wallet.address,
+        walletManager.getAddress('ethereum'),
         amount,
         {
-          from: this.wallet.address,
+          from: walletManager.getAddress('ethereum'),
           gasLimit: 500000
         }
       );
@@ -548,7 +587,7 @@ class PolygonMCPServer {
         tokenAddress,
         amount,
         {
-          from: this.wallet.address,
+          from: walletManager.getAddress('polygon'),
           gasLimit: 500000
         }
       );

@@ -27,7 +27,7 @@ This document outlines a comprehensive testing plan for the Polygon MCP server f
 2.1. Wallet Connection Test
     - Create a test script (test-wallet.js):
       ```javascript
-      const { PolygonMCPServer } = require('./polygon MCP.js');
+      const { PolygonMCPServer } = require('./polygon-mcp.js');
       const config = require('./config.json');
       
       async function testWallet() {
@@ -225,7 +225,7 @@ This document outlines a comprehensive testing plan for the Polygon MCP server f
 7.1. Full Flow Test
     - Create test-integration.js:
       ```javascript
-      const { PolygonMCPServer } = require('./polygon MCP.js');
+      const { PolygonMCPServer } = require('./polygon-mcp.js');
       const config = require('./config.json');
       
       async function testFullFlow() {
@@ -264,7 +264,7 @@ This document outlines a comprehensive testing plan for the Polygon MCP server f
 8.1. Invalid Input Testing
     - Create test-errors.js:
       ```javascript
-      const { PolygonMCPServer } = require('./polygon MCP.js');
+      const { PolygonMCPServer } = require('./polygon-mcp.js');
       const config = require('./config.json');
       
       async function testErrorHandling() {
@@ -299,7 +299,7 @@ This document outlines a comprehensive testing plan for the Polygon MCP server f
 9.1. Response Time Test
     - Create test-performance.js:
       ```javascript
-      const { PolygonMCPServer } = require('./polygon MCP.js');
+      const { PolygonMCPServer } = require('./polygon-mcp.js');
       const config = require('./config.json');
       
       async function testPerformance() {
@@ -347,4 +347,4 @@ Notes:
 - Test with different network conditions
 - Verify error messages are user-friendly
 - Check all security measures are working
-- Ensure proper cleanup after tests 
+- Ensure proper cleanup after tests

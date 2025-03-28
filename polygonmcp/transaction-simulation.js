@@ -6,10 +6,8 @@ const {
   formatUnits,
   formatEther,
   parseUnits,
-  parseEther,
   isAddress
 } = require('ethers');
-const axios = require('axios');
 const { ErrorCodes, createTransactionError, createWalletError } = require('./errors');
 const { defaultLogger } = require('./logger');
 const walletManager = require('./common/wallet-manager');
@@ -32,8 +30,8 @@ class TransactionSimulator {
     if (!privateKey) {
       throw createWalletError(
         ErrorCodes.WALLET_NOT_CONNECTED,
-        "Private key is required to connect wallet",
-        { context: "TransactionSimulator.connectWallet" }
+        'Private key is required to connect wallet',
+        { context: 'TransactionSimulator.connectWallet' }
       );
     }
     
@@ -51,8 +49,8 @@ class TransactionSimulator {
     if (!walletManager.isWalletConnected('polygon')) {
       throw createWalletError(
         ErrorCodes.WALLET_NOT_CONNECTED,
-        "Wallet not connected",
-        { context: "TransactionSimulator" }
+        'Wallet not connected',
+        { context: 'TransactionSimulator' }
       );
     }
     return true;
@@ -453,7 +451,7 @@ class TransactionSimulator {
       throw createTransactionError(
         ErrorCodes.TRANSACTION_FAILED,
         `Gas estimation failed: ${error.message}`,
-        { transaction: { ...transaction, from: txToEstimate.from } }
+        { transaction }
       );
     }
   }
