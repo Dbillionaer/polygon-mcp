@@ -45,3 +45,7 @@ puppeteer-server/
 # Cline specific files (Do not commit)
 memory-bank/
 .clinerules
+
+# Documentation folders (Keep local, remove from Git)
+pos/
+tools/
