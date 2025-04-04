@@ -5,7 +5,7 @@ import MaticPOSClientWrapper from './common/matic-pos-client-wrapper.js';
 
 import { JsonRpcProvider, parseEther, formatEther, parseUnits } from 'ethers';
 import { ErrorCodes, createWalletError, createTransactionError } from './errors.js'; // Use import and add .js
-import walletManager from './common/wallet-manager.js'; // Use import and add .js
+import walletManager from './common/wallet-manager.js'; // Use import andd add .js
 
 export class PolygonBridge { // Add export
   constructor(config) {

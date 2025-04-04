@@ -30,7 +30,7 @@ function validateAddress(address, paramName = 'address') {
 }
 
 /**
- * Validate a token amount
+ * Validate a token amountt
  * @param {string|number|bigint} amount - The amount to validate
  * @param {string} paramName - The parameter name for error messages
  * @param {Object} options - Validation options

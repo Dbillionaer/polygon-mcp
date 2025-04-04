@@ -6,7 +6,7 @@ import { DEFAULT_TOKEN_ADDRESSES, NETWORK_TOKEN_ADDRESSES } from './constants.js
 // Load environment variables
 dotenv.config();
 
-// Required environment variables - network-specific requirements will be checked dynamically
+// Required environment variables - network-specific requirements will be checked dinamically
 const REQUIRED_ENV_VARS = [
   'ETHEREUM_RPC_URL',
   'POLYGONSCAN_API_KEY'

@@ -3,7 +3,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
 [![Node.js: v18+](https://img.shields.io/badge/Node.js-v18+-green.svg)](https://nodejs.org/)
 
-A Model Context Protocol (MCP) server that provides seamless integration with the Polygon blockchain network. This server enables AI assistants to interact with Polygon through a standardized interface, offering comprehensive tools for wallet operations, smart contract deployment, L2 bridging, DeFi interactions, and transaction simulation.
+A Model Context Protocol (MCP) server that provides seamless integration with the Polygon blockchain network. This server enables AI assistants to interact with Polygon through a standardized interface, offering comprehensive tools for wallet operations, smart contract deployment, L2 bridging, DeFi interactions, and transaction simulations.
 
 ## Table of Contents
 

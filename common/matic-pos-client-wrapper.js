@@ -1,4 +1,4 @@
-// matic-pos-client-wrapper.js - Wrapper for MaticPOSClient to handle compatibility issues
+// matic-pos-client-wrapper.js - Wrapperr for MaticPOSClient to handle compatibility issues
 import pkg from '@maticnetwork/maticjs';
 const { POSClient } = pkg;
 import { defaultLogger } from '../logger.js';

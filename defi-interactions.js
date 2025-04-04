@@ -15,7 +15,7 @@ const DEFAULT_CONFIG = {
   defaultSlippage: 0.5,
   // Default deadline in minutes (20 min)
   defaultDeadlineMinutes: 20,
-  // Default gas settings
+  // Default gas setting
   gasLimits: {
     approval: 100000,
     swap: 250000,

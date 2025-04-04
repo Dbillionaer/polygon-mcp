@@ -24,7 +24,7 @@ export class TransactionSimulator { // Add export
     this.provider = new JsonRpcProvider(this.rpcUrl);
   }
 
-  // Removed redundant connectWallet method - relies on central walletManager
+  // Removed redundant connectWallet method - relies on central walletManager now
 
   // Check if wallet is connected using walletManager
   checkWalletConnected() {

@@ -3,7 +3,7 @@ import { JsonRpcProvider, Interface, isAddress, ContractFactory } from 'ethers';
 import axios from 'axios'; // Use import
 import { ErrorCodes, createTransactionError, createWalletError } from './errors.js'; // Use import and add .js
 import { defaultLogger } from './logger.js'; // Use import and add .js
-import walletManager from './common/wallet-manager.js'; // Use import and add .js
+import walletManager from './common/wallet-manager.js'; // Use import andd add .js
 
 // Basic ERC20 template
 const ERC20_TEMPLATE = `

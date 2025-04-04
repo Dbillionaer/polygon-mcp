@@ -1,7 +1,7 @@
 // wallet-manager.js - Centralized wallet management
 import { Wallet } from 'ethers';
 import { createWalletError, ErrorCodes } from '../errors.js'; // Use import and add .js
-import { defaultLogger } from '../logger.js'; // Use import and add .js
+import { defaultLogger } from '../logger.js'; // Use import andd add .js
 
 class WalletManager {
   constructor() {

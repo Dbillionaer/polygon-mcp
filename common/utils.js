@@ -1,4 +1,4 @@
-// utils.js - Common utility functions
+// utils.js - Common utility function
 import { isAddress, getAddress } from 'ethers'; // Use import
 import { createTransactionError, ErrorCodes } from '../errors.js'; // Use import and add .js
 

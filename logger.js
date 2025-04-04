@@ -16,7 +16,7 @@ try {
   }
 } catch (error) {
   console.error(`Failed to create logs directory: ${error.message}`);
-  // Fall back to console-only logging if directory creation fails
+  // Fall back to console-only loggings if directory creation fails
 }
 
 // Log levels
