@@ -1,0 +1,70 @@
+# Node.js
+node_modules/
+npm-debug.log
+yarn-debug.log
+yarn-error.log
+package-lock.json
+yarn.lock
+
+# Environment variables
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# Logs
+logs/
+*.log
+
+# Build output
+dist/
+build/
+
+# IDE and editor files
+.idea/
+.vscode/
+*.swp
+*.swo
+.DS_Store
+
+# Test coverage
+coverage/
+
+# Sensitive files
+*.pem
+*.key
+
+# Other MCP servers
+github/
+github-server/
+github-mcp-server/
+puppeteer/
+puppeteer-server/
+
+# Cline specific files (Do not commit)
+memory-bank/
+.clinerules
+
+# Documentation folders (Keep local, remove from Git)
+pos/
+tools/
+
+# Temporary test files
+check-balance.js
+check-balance-direct.js
+check-balance-ethers.js
+check-balance-simple.js
+test-simple.js
+test-amoy-config.js
+test-mainnet-config.js
+test-mainnet-bridge.js
+test-bridge-operations.js
+test-bridge-operations-mainnet.js
+test-defi-operations-mainnet.js
+test-polygon-mainnet-tools.js
+test-wallet-connection.js
+test-wallet.js
+test-network-config.js
+use-server-tools.js
+wallet-test-output.txt
