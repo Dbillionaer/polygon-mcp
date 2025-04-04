@@ -1,0 +1,549 @@
+Polygon MCP Testing Plan
+======================
+
+This document outlines a comprehensive testing plan for the Polygon MCP server functionality. Follow these steps in order to verify all components are working correctly.
+
+1. Initial Setup and Environment Verification
+-------------------------------------------
+1.1. Environment Setup
+    - Ensure Node.js v14 or higher is installed
+    - Run 'npm install' to install all dependencies
+    - Copy .env.example to .env
+    - Configure the following in .env:
+      * POLYGON_MAINNET_RPC (use a reliable RPC endpoint)
+      * POLYGON_MUMBAI_RPC (use Mumbai testnet RPC)
+      * ETHEREUM_RPC_URL (use your Alchemy key)
+      * POLYGONSCAN_API_KEY (use your Polygonscan API key)
+      * PRIVATE_KEY (use a test wallet private key)
+      * DEFAULT_NETWORK (set to 'mumbai' for testing)
+      # Optional: Add DeFi router addresses if needed for specific tests
+
+1.2. Configuration Manager Test
+    - Create a test script (test-config.js):
+      ```javascript
+      const { getConfig } = require('./common/config-manager.js');
+      try {
+        const config = getConfig();
+        console.log('Loaded Config:', config);
+        // Add specific checks if needed, e.g.,
+        if (!config.rpcUrl.includes('mumbai')) {
+           console.warn('Warning: DEFAULT_NETWORK is mumbai but POLYGON_MUMBAI_RPC might not be set correctly.');
+        }
+        console.log('Config loaded successfully.');
+      } catch (error) {
+        console.error('Config loading failed:', error);
+      }
+      ```
+    - Run: `node test-config.js`
+    - Verify config loads without errors and reflects `.env` settings.
+
+1.3. Network Connection Test
+    - Run the following command to test basic connectivity:
+      node -e "const { JsonRpcProvider } = require('ethers'); const provider = new JsonRpcProvider(process.env.POLYGON_MUMBAI_RPC); provider.getBlockNumber().then(console.log).catch(console.error);"
+    - Verify that it returns a block number without errors
+
+2. Wallet Manager and Basic Operations Testing (via MCP Server)
+-------------------------------------------------------------
+*Note: Assumes PRIVATE_KEY is set in .env so the server connects wallet on startup.*
+
+2.1. Wallet Connection & Address Check (via MCP Server)
+    - Create a test script (test-wallet-server.js):
+      ```javascript
+      const { PolygonMCPServer } = require('./polygon-mcp.js');
+      const walletManager = require('./common/wallet-manager.js');
+
+      async function testWallet() {
+        // Server instantiation implicitly uses getConfig and connects wallet if PRIVATE_KEY is set
+        const server = new PolygonMCPServer();
+        // Allow time for async operations if any during startup, though constructor is sync
+        await new Promise(resolve => setTimeout(resolve, 100));
+
+        if (walletManager.isWalletConnected('polygon')) {
+          const address = walletManager.getAddress('polygon');
+          console.log('Wallet connected via manager. Address:', address);
+
+          // Test get-address tool via server instance (alternative)
+          const addressResult = await server.mcpServer.callTool('get-address', {});
+          console.log('Address via MCP tool:', JSON.parse(addressResult.content[0].text));
+        } else {
+          console.error('Wallet did not connect automatically. Check PRIVATE_KEY in .env');
+        }
+      }
+
+      testWallet().catch(console.error);
+      ```
+    - Run: `node test-wallet-server.js`
+    - Verify wallet address is displayed correctly.
+
+2.2. Balance Checking (via MCP Server Tool)
+    - Add to test-wallet-server.js:
+      ```javascript
+      async function checkBalances() {
+        const server = new PolygonMCPServer(); // Assumes wallet connected via env
+        await new Promise(resolve => setTimeout(resolve, 100));
+        if (!walletManager.isWalletConnected('polygon')) return console.error('Wallet not connected');
+
+        const balanceResult = await server.mcpServer.callTool('list-balances', {});
+        console.log('Balances via MCP tool:', JSON.parse(balanceResult.content[0].text));
+      }
+      ```
+    - Run `checkBalances().catch(console.error);` and verify balances.
+
+2.3. Testnet MATIC Request (via MCP Server Tool - Mocked)
+    - Add to test-wallet-server.js:
+      ```javascript
+      async function requestTestnetMatic() {
+        const server = new PolygonMCPServer(); // Assumes wallet connected via env
+        await new Promise(resolve => setTimeout(resolve, 100));
+        if (!walletManager.isWalletConnected('polygon')) return console.error('Wallet not connected');
+
+        const faucetResult = await server.mcpServer.callTool('get-testnet-matic', {});
+        console.log('Faucet request via MCP tool:', JSON.parse(faucetResult.content[0].text));
+      }
+      ```
+    - Run `requestTestnetMatic().catch(console.error);` and verify mock success message.
+
+3. Bridge Operations Testing (via PolygonBridge Class)
+----------------------------------------------------
+*Note: Assumes PRIVATE_KEY is set in .env.*
+
+3.1. Bridge Instantiation & Connection Test
+    - Create test-bridge.js:
+      ```javascript
+      const { PolygonBridge } = require('./bridge-operations.js');
+      const { getConfig } = require('./common/config-manager.js');
+      const walletManager = require('./common/wallet-manager.js');
+
+      async function testBridgeSetup() {
+        const config = getConfig();
+        // Connect wallet centrally first (simulates server startup)
+        if (process.env.PRIVATE_KEY) {
+           walletManager.connectToMultipleNetworks(process.env.PRIVATE_KEY, ['polygon', 'ethereum']);
+        } else {
+           console.error('PRIVATE_KEY not set in .env'); return;
+        }
+
+        const bridge = new PolygonBridge({ // Pass relevant config parts
+           rootRpcUrl: config.parentRpcUrl,
+           childRpcUrl: config.rpcUrl,
+           posRootChainManager: config.posRootChainManager,
+           rootChainAddress: config.rootChainAddress,
+           childChainAddress: config.childChainAddress,
+        });
+        // Bridge internal connectWallet uses the already connected walletManager instance
+        bridge.connectWallet(process.env.PRIVATE_KEY); // This updates the internal client
+
+        console.log('PolygonBridge instantiated and connected.');
+        // Optional: Add a simple read call if available, e.g., checking config
+      }
+      testBridgeSetup().catch(console.error);
+      ```
+    - Run: `node test-bridge.js`
+    - Verify instantiation works.
+
+3.2. Bridge Status Check (using PolygonBridge)
+    - Add to test-bridge.js (inside an async function after setup):
+      ```javascript
+        // Test bridge status (requires a valid Polygon Tx Hash of a bridge operation)
+        // const status = await bridge.getTransactionStatus('0x...'); // Use a known tx hash
+        // console.log('Bridge status:', status);
+        console.log('Skipping bridge status check - requires valid tx hash.');
+      ```
+    - Run and verify (or note skipping).
+
+3.3. Token Bridge Operation (e.g., Deposit - Requires Funds/Approval on Goerli)
+    - Add to test-bridge.js (inside an async function after setup):
+      ```javascript
+      async function testDeposit() {
+         // ... [setup code from 3.1] ...
+         try {
+            console.log('Attempting ERC20 deposit (requires Goerli funds/approval)...');
+            // Use a Goerli test token address and ensure wallet has funds/approval
+            const result = await bridge.depositERC20(
+              '0x...', // Goerli Test Token Address
+              '0.01'   // Small amount
+            );
+            console.log('Deposit ERC20 result:', result);
+         } catch (error) {
+            console.error('Deposit ERC20 failed:', error.message);
+         }
+      }
+      testDeposit().catch(console.error);
+      ```
+    - Run and verify (requires significant setup on Goerli testnet).
+
+4. DeFi Operations Testing (via DeFiProtocols Class)
+--------------------------------------------------
+*Note: Assumes PRIVATE_KEY is set in .env.*
+
+4.1. DeFi Instantiation & Quote Test
+    - Create test-defi.js:
+      ```javascript
+      const { DeFiProtocols } = require('./defi-interactions.js');
+      const { getConfig } = require('./common/config-manager.js');
+      const walletManager = require('./common/wallet-manager.js');
+
+      async function testDeFiQuotes() {
+        const config = getConfig();
+        // Connect wallet centrally
+        if (process.env.PRIVATE_KEY) {
+           walletManager.connectWallet(process.env.PRIVATE_KEY, 'polygon');
+        } else {
+           console.error('PRIVATE_KEY not set in .env'); return;
+        }
+
+        const defi = new DeFiProtocols({ // Pass relevant config parts
+            rpcUrl: config.rpcUrl,
+            quickswapRouter: config.quickswapRouter, // Ensure these are in .env if testing swaps
+            uniswapRouter: config.uniswapRouter,
+            uniswapV2Router: config.uniswapV2Router,
+            tokenAddresses: config.tokenAddresses,
+            polymarketFactory: config.polymarketFactory,
+            defaultSlippage: config.defaultSlippage,
+            deadlineMinutes: config.deadlineMinutes,
+        });
+        console.log('DeFiProtocols instantiated.');
+
+        try {
+          // Test QuickSwap quote (replace with valid addresses if needed)
+          console.log('Testing QuickSwap Quote...');
+          const qsQuote = await defi.getQuickSwapQuote('WMATIC', 'USDC', '0.1');
+          console.log('QuickSwap quote:', qsQuote);
+        } catch (error) {
+          console.error('QuickSwap Quote failed:', error.message);
+        }
+
+        try {
+          // Test Uniswap V3 quote (replace with valid addresses if needed)
+          console.log('Testing Uniswap V3 Quote...');
+          const uniQuote = await defi.getUniswapV3QuoteSingle('WMATIC', 'USDC', '0.1', 3000);
+          console.log('Uniswap V3 quote:', uniQuote);
+        } catch (error) {
+          console.error('Uniswap V3 Quote failed:', error.message);
+        }
+      }
+      testDeFiQuotes().catch(console.error);
+      ```
+    - Run: `node test-defi.js`
+    - Verify quotes are received (ensure router addresses are configured in `.env` if testing swaps).
+
+4.2. DeFi Swap Test (Requires Funds/Approval on Mumbai)
+    - Add to test-defi.js (inside an async function after setup):
+      ```javascript
+      async function testSwap() {
+         // ... [setup code from 4.1] ...
+         try {
+            console.log('Attempting QuickSwap swap (requires Mumbai funds/approval)...');
+            // Ensure wallet has WMATIC and has approved the QuickSwap router
+            const swapResult = await defi.quickSwapTokens('WMATIC', 'USDC', '0.01'); // Small amount
+            console.log('QuickSwap Swap result:', swapResult);
+         } catch (error) {
+            console.error('QuickSwap Swap failed:', error.message, error.details || '');
+         }
+      }
+      testSwap().catch(console.error);
+      ```
+    - Run and verify (requires setup on Mumbai).
+
+5. Transaction Simulation Testing (via TransactionSimulator Class)
+------------------------------------------------------------------
+*Note: Assumes PRIVATE_KEY is set in .env.*
+
+5.1. Basic Transaction Simulation
+    - Create test-simulation.js:
+      ```javascript
+      const { TransactionSimulator } = require('./transaction-simulation.js');
+      const { getConfig } = require('./common/config-manager.js');
+      const walletManager = require('./common/wallet-manager.js');
+
+      async function testSimulation() {
+        const config = getConfig();
+        // Connect wallet centrally
+        if (process.env.PRIVATE_KEY) {
+           walletManager.connectWallet(process.env.PRIVATE_KEY, 'polygon');
+        } else {
+           console.error('PRIVATE_KEY not set in .env'); return;
+        }
+
+        const simulator = new TransactionSimulator({ // Pass relevant config
+            rpcUrl: config.rpcUrl,
+            explorerApiKey: config.explorerApiKey,
+            tokenAddresses: config.tokenAddresses
+        });
+        console.log('TransactionSimulator instantiated.');
+
+        try {
+          console.log('Testing basic simulation...');
+          const result = await simulator.simulateTransaction({
+            // from: walletManager.getAddress('polygon'), // 'from' is added automatically if not provided
+            to: walletManager.getAddress('polygon'), // Send to self for simple test
+            value: '1000000000000000', // 0.001 POL in wei
+            data: '0x'
+          });
+          console.log('Simulation result:', result);
+          if (!result.success) console.error('Simulation Error:', result.errorMessage);
+        } catch(error) {
+          console.error('Simulation failed:', error);
+        }
+      }
+      testSimulation().catch(console.error);
+      ```
+    - Run: `node test-simulation.js`
+    - Verify simulation result (success should likely be true for a simple transfer).
+
+5.2. Gas Estimation Test
+    - Add to test-simulation.js (inside an async function after setup):
+      ```javascript
+      async function testGasEstimation() {
+         // ... [setup code from 5.1] ...
+         try {
+            console.log('Testing gas estimation...');
+            const estimate = await simulator.estimateGas({
+              to: walletManager.getAddress('polygon'),
+              value: '1000000000000000',
+              data: '0x'
+            });
+            console.log('Gas estimate:', estimate);
+         } catch (error) {
+            console.error('Gas estimation failed:', error);
+         }
+      }
+      testGasEstimation().catch(console.error);
+      ```
+    - Run and verify gas estimation returns values.
+
+6. Contract Deployment Testing (via ContractTemplates Class)
+----------------------------------------------------------
+*Note: Assumes PRIVATE_KEY is set in .env.*
+
+6.1. Contract Template Listing Test
+    - Create test-contract.js:
+      ```javascript
+      const { ContractTemplates } = require('./contract-templates.js');
+      const { getConfig } = require('./common/config-manager.js');
+      const walletManager = require('./common/wallet-manager.js');
+
+      async function testContractTemplates() {
+        const config = getConfig();
+        // Connect wallet centrally
+        if (process.env.PRIVATE_KEY) {
+           walletManager.connectWallet(process.env.PRIVATE_KEY, 'polygon');
+        } else {
+           console.error('PRIVATE_KEY not set in .env'); return;
+        }
+
+        const templates = new ContractTemplates({ // Pass relevant config
+            rpcUrl: config.rpcUrl,
+            explorerApiKey: config.explorerApiKey,
+            networkName: config.defaultNetwork || 'mumbai'
+        });
+        console.log('ContractTemplates instantiated.');
+
+        try {
+          console.log('Testing template listing...');
+          const list = await templates.listTemplates();
+          console.log('Available templates:', list);
+        } catch (error) {
+          console.error('Template listing failed:', error);
+        }
+      }
+      testContractTemplates().catch(console.error);
+      ```
+    - Run: `node test-contract.js`
+    - Verify templates are listed.
+
+6.2. Contract Deployment Test (Requires Mumbai Funds)
+    - Add to test-contract.js (inside an async function after setup):
+      ```javascript
+      async function testDeployment() {
+         // ... [setup code from 6.1] ...
+         try {
+            console.log('Attempting ERC20 deployment (requires Mumbai funds)...');
+            const deployResult = await templates.deployFromTemplate(
+              'erc20',
+              { name: 'MyTestToken' }, // Params for template processing
+              ['MyTestToken', 'MTT', '1000000000000000000000000'] // Constructor args: name, symbol, initialSupply
+            );
+            console.log('Deployment result:', deployResult);
+            if (deployResult.address) {
+               console.log(`Contract deployed at: ${deployResult.address}`);
+               // Optional: Add verification test here if API key is valid
+               // console.log('Attempting verification...');
+               // const verifyResult = await templates.verifyContract(...)
+               // console.log('Verification result:', verifyResult);
+            }
+         } catch (error) {
+            console.error('Deployment failed:', error.message, error.details || '');
+         }
+      }
+      testDeployment().catch(console.error);
+      ```
+    - Run and verify deployment (requires funds on Mumbai). Note: `simulateDeployment` doesn't exist, testing actual deployment.
+
+7. Integration Testing (via MCP Server Tools)
+--------------------------------------------
+*Note: Assumes PRIVATE_KEY is set in .env.*
+
+7.1. Full Flow Test (Using Tools)
+    - Create test-integration.js:
+      ```javascript
+      const { PolygonMCPServer } = require('./polygon-mcp.js');
+
+      async function testFullFlow() {
+        // Server startup handles config and wallet connection
+        const server = new PolygonMCPServer();
+        await new Promise(resolve => setTimeout(resolve, 100)); // Allow potential async init
+        if (!walletManager.isWalletConnected('polygon')) {
+           console.error('Wallet not connected for integration test.'); return;
+        }
+        const walletAddress = walletManager.getAddress('polygon');
+        console.log(`Starting integration test with wallet: ${walletAddress}`);
+
+        try {
+          // 1. Check balances
+          console.log('\n1. Checking balances...');
+          const balResult = await server.mcpServer.callTool('list-balances', {});
+          console.log('Initial balances:', JSON.parse(balResult.content[0].text));
+
+          // 2. Get testnet MATIC (Mocked)
+          console.log('\n2. Requesting testnet MATIC (mocked)...');
+          const faucetResult = await server.mcpServer.callTool('get-testnet-matic', {});
+          console.log('Faucet result:', JSON.parse(faucetResult.content[0].text));
+
+          // 3. Simulate transaction
+          console.log('\n3. Simulating transfer...');
+          const simResult = await server.mcpServer.callTool('simulate-transaction', {
+            transaction: { to: walletAddress, value: '1000000000000000' } // 0.001 POL
+          });
+          console.log('Transaction simulation:', JSON.parse(simResult.content[0].text));
+
+          // 4. Get DeFi quote (Using underlying class method for now, as no MCP tool exists)
+          console.log('\n4. Getting QuickSwap quote...');
+          // Ensure DeFi routers are configured in .env for this to work
+          const quote = await server.defi.getQuickSwapQuote('WMATIC', 'USDC', '0.1');
+          console.log('DeFi quote:', quote);
+
+          console.log('\nIntegration test completed (partially).');
+
+        } catch (error) {
+          console.error('Integration test failed:', error);
+        }
+      }
+      testFullFlow().catch(console.error);
+      ```
+    - Run: `node test-integration.js`
+    - Verify steps execute (DeFi quote requires router config).
+
+8. Error Handling Testing (via MCP Server Tools)
+-----------------------------------------------
+*Note: Assumes PRIVATE_KEY is set in .env.*
+
+8.1. Invalid Input Testing
+    - Create test-errors.js:
+      ```javascript
+      const { PolygonMCPServer } = require('./polygon-mcp.js');
+
+      async function testErrorHandling() {
+        const server = new PolygonMCPServer(); // Assumes wallet connected via env
+        await new Promise(resolve => setTimeout(resolve, 100));
+        if (!walletManager.isWalletConnected('polygon')) return console.error('Wallet not connected');
+
+        // Test invalid address for balance check
+        try {
+          console.log('\nTesting invalid address...');
+          await server.mcpServer.callTool('list-balances', { address: 'invalid-address' });
+        } catch (error) {
+          console.log('Caught expected invalid address error:', error.message, error.details || '');
+        }
+
+        // Test invalid amount for transfer
+        try {
+          console.log('\nTesting invalid amount...');
+          await server.mcpServer.callTool('transfer-funds', { to: walletManager.getAddress('polygon'), amount: '-1' });
+        } catch (error) {
+          console.log('Caught expected invalid amount error:', error.message, error.details || '');
+        }
+
+        // Test unknown token symbol
+        try {
+          console.log('\nTesting unknown token...');
+          await server.mcpServer.callTool('transfer-funds', { to: walletManager.getAddress('polygon'), amount: '1', token: 'UNKNOWN_TOKEN_XYZ' });
+        } catch (error) {
+          console.log('Caught expected unknown token error:', error.message, error.details || '');
+        }
+      }
+      testErrorHandling().catch(console.error);
+      ```
+    - Run: `node test-errors.js`
+    - Verify expected errors are caught and logged.
+
+9. Performance Testing (via MCP Server Tools)
+--------------------------------------------
+*Note: Assumes PRIVATE_KEY is set in .env.*
+
+9.1. Response Time Test
+    - Create test-performance.js:
+      ```javascript
+      const { PolygonMCPServer } = require('./polygon-mcp.js');
+
+      async function testPerformance() {
+        const server = new PolygonMCPServer(); // Assumes wallet connected via env
+        await new Promise(resolve => setTimeout(resolve, 100));
+        if (!walletManager.isWalletConnected('polygon')) return console.error('Wallet not connected');
+
+        const iterations = 5;
+        let totalBalanceTime = 0;
+        let totalGasTime = 0;
+        let totalSimTime = 0;
+
+        console.log(`Running ${iterations} iterations...`);
+
+        for (let i = 0; i < iterations; i++) {
+          const startBalance = performance.now();
+          await server.mcpServer.callTool('list-balances', {});
+          totalBalanceTime += performance.now() - startBalance;
+
+          const startGas = performance.now();
+          await server.mcpServer.callTool('get-gas-price', {});
+          totalGasTime += performance.now() - startGas;
+
+          const startSim = performance.now();
+          await server.mcpServer.callTool('simulate-transaction', {
+             transaction: { to: walletManager.getAddress('polygon'), value: '1000' }
+          });
+          totalSimTime += performance.now() - startSim;
+        }
+
+        console.log(`Avg Balance Check Time: ${(totalBalanceTime / iterations).toFixed(2)} ms`);
+        console.log(`Avg Gas Price Time:     ${(totalGasTime / iterations).toFixed(2)} ms`);
+        console.log(`Avg Simulation Time:    ${(totalSimTime / iterations).toFixed(2)} ms`);
+      }
+      testPerformance().catch(console.error);
+      ```
+    - Run: `node test-performance.js`
+    - Record average response times.
+
+10. Cleanup and Documentation
+---------------------------
+10.1. Test Results Documentation
+     - Create a test-results.md file documenting:
+       * All test cases run
+       * Success/failure status
+       * Any issues encountered
+       * Performance metrics
+       * Recommendations for improvement
+
+10.2. Environment Cleanup
+     - Remove any test transactions
+     - Reset environment variables if needed
+     - Document any cleanup actions required
+
+Notes:
+- Always use testnet (Mumbai) for testing
+- Keep test amounts small
+- Document any errors or unexpected behavior
+- Take screenshots or logs of important results
+- Test with different network conditions
+- Verify error messages are user-friendly
+- Check all security measures are working
+- Ensure proper cleanup after tests
