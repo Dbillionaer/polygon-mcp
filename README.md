@@ -60,7 +60,7 @@ POLYGON_AMOY_RPC=https://rpc-amoy.polygon.technology
 ETHEREUM_RPC_URL=https://eth-sepolia.g.alchemy.com/v2/YOUR_ALCHEMY_KEY  # Sepolia for Amoy's L1
 
 # API Keys
-POLYGONSCAN_API_KEY=YOUR_EXPLORER_API_KEY  # Use OKLink API key for Amoy
+POLYGONSCAN_API_KEY=YOUR_EXPLORER_API_KEY  
 
 # Wallet (IMPORTANT: Use secure key management in production)
 PRIVATE_KEY=your_private_key_here

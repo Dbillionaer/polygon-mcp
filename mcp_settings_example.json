@@ -2,7 +2,7 @@
   "mcpServers": {
     "polygon": {
       "command": "node",
-      "args": ["paths/to/polygon-mcp.js"],
+      "args": ["path/to/polygon-mcp.js"],
       "env": {
         "POLYGON_MAINNET_RPC": "https://polygon-rpc.com",
         "POLYGON_AMOY_RPC": "https://rpc-amoy.polygon.technology/",
